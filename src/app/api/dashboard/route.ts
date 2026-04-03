@@ -99,7 +99,29 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    // 7. Global stats
+    // 7. Missions — group tasks by mission field
+    const missionMap = new Map<string, { mission: string; task_count: number; latest_task: string; latest_at: string }>();
+    for (const t of tasks || []) {
+      if (!t.mission) continue;
+      const existing = missionMap.get(t.mission);
+      if (!existing) {
+        missionMap.set(t.mission, {
+          mission: t.mission,
+          task_count: 1,
+          latest_task: t.text,
+          latest_at: t.updated_at,
+        });
+      } else {
+        existing.task_count++;
+        if (t.updated_at > existing.latest_at) {
+          existing.latest_task = t.text;
+          existing.latest_at = t.updated_at;
+        }
+      }
+    }
+    const missions = Array.from(missionMap.values()).sort((a, b) => b.latest_at.localeCompare(a.latest_at));
+
+    // 8. Global stats
     const totalOpen = (tasks || []).length;
     const p0Total = tasksByPriority.P0?.length || 0;
     const p1Total = tasksByPriority.P1?.length || 0;
@@ -117,6 +139,7 @@ export async function GET(request: NextRequest) {
         P2: tasksByPriority.P2 || [],
         ALL: tasks || [],
       },
+      missions,
       sessions: sessions || [],
       session_total: sessionCount || 0,
     });

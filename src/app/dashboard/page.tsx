@@ -53,10 +53,18 @@ interface Session {
   summary: string | null;
 }
 
+interface Mission {
+  mission: string;
+  task_count: number;
+  latest_task: string;
+  latest_at: string;
+}
+
 interface Data {
   stats: { open: number; p0: number; p1: number; p2: number; this_week: number; this_month: number };
   cards: Card[];
   tasks_by_priority: { P0: Task[]; P1: Task[]; P2: Task[]; ALL: Task[] };
+  missions: Mission[];
   sessions: Session[];
   session_total: number;
 }
@@ -449,6 +457,33 @@ function DashboardContent() {
             </div>
 
             {!sessionsExpanded && <div className="h-px bg-[var(--border)] mx-4" />}
+
+            {/* Missions */}
+            {!sessionsExpanded && data.missions.length > 0 && (
+              <div className="shrink-0">
+                <div className="flex items-center justify-between px-4 py-2.5">
+                  <h2 className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-[0.08em]">Missions</h2>
+                  <span className="text-[11px] text-[var(--text3)]">{data.missions.length}</span>
+                </div>
+                <div className="px-2 space-y-1 pb-2">
+                  {data.missions.map((m) => (
+                    <div key={m.mission} className="px-3 py-2.5 rounded-[10px] bg-[var(--card)]">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[13px] font-semibold text-[var(--text)]">{m.mission}</span>
+                        <span className="text-[11px] text-[var(--text3)] tabular-nums">{m.task_count} tasks</span>
+                      </div>
+                      <p className="text-[11px] text-[var(--text3)] line-clamp-1">{m.latest_task}</p>
+                      <p className="text-[10px] text-[var(--text3)] mt-0.5 opacity-60">
+                        {new Date(m.latest_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                        {" · "}
+                        {new Date(m.latest_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+                <div className="h-px bg-[var(--border)] mx-4" />
+              </div>
+            )}
 
             {/* 2-column card grid (reference-inspired) */}
             {!sessionsExpanded && (
