@@ -61,11 +61,27 @@ interface HookLog {
   created_at: string;
 }
 
+interface MissionTaskPreview {
+  id: string;
+  text: string;
+  priority: string | null;
+  task_code: string | null;
+  project_key: string;
+  bucket: string;
+  surface: string | null;
+  is_owner_action: boolean;
+  updated_at: string;
+}
+
 interface Mission {
   mission: string;
   task_count: number;
   latest_task: string;
   latest_at: string;
+  p0: number;
+  p1: number;
+  p2: number;
+  tasks: MissionTaskPreview[];
 }
 
 interface Data {
@@ -236,6 +252,7 @@ function DashboardContent() {
   const [toast, setToast] = useState<string | null>(null);
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [kpiFilter, setKpiFilter] = useState<KpiFilter>(null);
+  const [expandedMission, setExpandedMission] = useState<string | null>(null);
 
   const fetchDashboard = useCallback(async (tab: string) => {
     setLoading(true);
@@ -504,20 +521,63 @@ function DashboardContent() {
                   <span className="text-[11px] text-[var(--text3)]">{data.missions.length}</span>
                 </div>
                 <div className="px-2 space-y-1 pb-2">
-                  {data.missions.map((m) => (
-                    <div key={m.mission} className="px-3 py-2.5 rounded-[10px] bg-[var(--card)]">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[13px] font-semibold text-[var(--text)]">{m.mission}</span>
-                        <span className="text-[11px] text-[var(--text3)] tabular-nums">{m.task_count} tasks</span>
+                  {data.missions.map((m) => {
+                    const isExpanded = expandedMission === m.mission;
+                    return (
+                      <div key={m.mission}>
+                        <button
+                          onClick={() => setExpandedMission(isExpanded ? null : m.mission)}
+                          className="w-full text-left px-3 py-2.5 rounded-[10px] bg-[var(--card)] transition-all hover:bg-[var(--card)]/80"
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-1.5">
+                              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className={`transition-transform shrink-0 ${isExpanded ? "rotate-90" : ""}`}>
+                                <path d="M3 1L7 5L3 9" stroke="var(--text3)" strokeWidth="1.5" strokeLinecap="round" />
+                              </svg>
+                              <span className="text-[13px] font-semibold text-[var(--text)]">{m.mission}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {m.p0 > 0 && <span className="w-[6px] h-[6px] rounded-full bg-[#ff453a]" />}
+                              <span className="text-[11px] text-[var(--text3)] tabular-nums">{m.task_count}</span>
+                            </div>
+                          </div>
+                          {!isExpanded && (
+                            <>
+                              <p className="text-[11px] text-[var(--text3)] line-clamp-1 pl-[18px]">{m.latest_task}</p>
+                              <p className="text-[10px] text-[var(--text3)] mt-0.5 opacity-60 pl-[18px]">
+                                {new Date(m.latest_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                                {" · "}
+                                {new Date(m.latest_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                              </p>
+                            </>
+                          )}
+                        </button>
+                        {isExpanded && (
+                          <div className="mt-1 space-y-0.5 pl-2">
+                            {m.tasks.slice(0, 5).map((t) => (
+                              <div key={t.id} className="flex items-center gap-2 px-3 py-1.5 rounded-[8px] hover:bg-[var(--card)]/50">
+                                {t.priority && (
+                                  <span className="w-[6px] h-[6px] rounded-full shrink-0" style={{ backgroundColor: t.priority === "P0" ? "#ff453a" : t.priority === "P1" ? "#ff9f0a" : "#ffd60a" }} />
+                                )}
+                                {t.task_code && <span className="text-[10px] font-mono text-[var(--accent)] shrink-0">{t.task_code}</span>}
+                                <span className="text-[12px] text-[var(--text2)] line-clamp-1 flex-1">{t.text}</span>
+                                {t.surface && <span className="text-[9px] px-1.5 py-0.5 rounded bg-[var(--card)] text-[var(--text3)] shrink-0">{t.surface}</span>}
+                              </div>
+                            ))}
+                            {m.task_count > 5 && (
+                              <p className="text-[10px] text-[var(--text3)] opacity-60 px-3 py-1">+{m.task_count - 5} more</p>
+                            )}
+                            <button
+                              onClick={() => router.push(`/mission/${encodeURIComponent(m.mission)}`)}
+                              className="text-[11px] text-[var(--accent)] hover:underline px-3 py-1.5"
+                            >
+                              View all →
+                            </button>
+                          </div>
+                        )}
                       </div>
-                      <p className="text-[11px] text-[var(--text3)] line-clamp-1">{m.latest_task}</p>
-                      <p className="text-[10px] text-[var(--text3)] mt-0.5 opacity-60">
-                        {new Date(m.latest_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                        {" · "}
-                        {new Date(m.latest_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
-                      </p>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 <div className="h-px bg-[var(--border)] mx-4" />
               </div>

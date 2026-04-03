@@ -99,20 +99,38 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    // 7. Missions — group tasks by mission field
-    const missionMap = new Map<string, { mission: string; task_count: number; latest_task: string; latest_at: string }>();
+    // 7. Missions — group tasks by mission field with task previews
+    const missionMap = new Map<string, {
+      mission: string;
+      task_count: number;
+      latest_task: string;
+      latest_at: string;
+      p0: number;
+      p1: number;
+      p2: number;
+      tasks: { id: string; text: string; priority: string | null; task_code: string | null; project_key: string; bucket: string; surface: string | null; is_owner_action: boolean; updated_at: string }[];
+    }>();
     for (const t of tasks || []) {
       if (!t.mission) continue;
       const existing = missionMap.get(t.mission);
+      const taskPreview = { id: t.id, text: t.text, priority: t.priority, task_code: t.task_code, project_key: t.project_key, bucket: t.bucket, surface: t.surface, is_owner_action: t.is_owner_action, updated_at: t.updated_at };
       if (!existing) {
         missionMap.set(t.mission, {
           mission: t.mission,
           task_count: 1,
           latest_task: t.text,
           latest_at: t.updated_at,
+          p0: t.priority === "P0" ? 1 : 0,
+          p1: t.priority === "P1" ? 1 : 0,
+          p2: t.priority === "P2" ? 1 : 0,
+          tasks: [taskPreview],
         });
       } else {
         existing.task_count++;
+        if (t.priority === "P0") existing.p0++;
+        if (t.priority === "P1") existing.p1++;
+        if (t.priority === "P2") existing.p2++;
+        existing.tasks.push(taskPreview);
         if (t.updated_at > existing.latest_at) {
           existing.latest_task = t.text;
           existing.latest_at = t.updated_at;
