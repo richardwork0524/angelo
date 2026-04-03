@@ -6,10 +6,23 @@ import { Fab } from "@/components/fab";
 import { QuickCaptureSheet } from "@/components/quick-capture-sheet";
 import { Toast } from "@/components/toast";
 import { ExpandableTaskRow, type DashboardTask } from "@/components/expandable-task-row";
+import { TaskDetailModal, type ModalTask } from "@/components/task-detail-modal";
 
 /* ── Types ── */
 
-interface TaskPreview { id: string; text: string; priority: string | null }
+interface TaskPreview {
+  id: string;
+  text: string;
+  priority: string | null;
+  mission: string | null;
+  progress: string | null;
+  task_code: string | null;
+  surface: string | null;
+  is_owner_action: boolean;
+  bucket: string;
+  project_key: string;
+  updated_at: string;
+}
 
 interface Card {
   child_key: string;
@@ -162,48 +175,61 @@ function KpiRow({ stats, activeFilter, onFilter }: { stats: Data["stats"]; activ
 
 /* ── Company Card (reference-style: 2-col grid with task previews) ── */
 
-function CompanyCard({ card, onClick }: { card: Card; onClick: () => void }) {
+function CompanyCard({ card, onClick, onTaskClick }: { card: Card; onClick: () => void; onTaskClick: (t: TaskPreview) => void }) {
   const hasP0 = card.p0 > 0;
 
   return (
-    <button
-      onClick={onClick}
-      className="w-full text-left rounded-[16px] bg-[var(--card)] border border-[var(--border)] p-4 hover:border-[var(--border2)] hover:bg-[var(--card2)] transition-all active:scale-[0.98]"
-    >
-      {/* Header: name + open count */}
-      <div className="flex items-start justify-between mb-1">
-        <span className={`text-[15px] font-bold ${hasP0 ? "text-[#ff453a]" : "text-[var(--accent)]"}`}>
+    <div className="rounded-[16px] bg-[var(--card)] border border-[var(--border)] hover:border-[var(--border2)] transition-all h-[180px] flex flex-col overflow-hidden">
+      {/* Header: name + task count — clickable to filter */}
+      <button
+        onClick={onClick}
+        className="flex items-center justify-between px-4 pt-3 pb-1 text-left w-full"
+      >
+        <span className={`text-[14px] font-bold truncate ${hasP0 ? "text-[#ff453a]" : "text-[var(--accent)]"}`}>
           {card.display_name}
         </span>
+        <span className="text-[12px] text-[var(--text3)] tabular-nums shrink-0 ml-2">{card.open_tasks} open</span>
+      </button>
+
+      {/* Task previews — clickable to open modal */}
+      <div className="flex-1 px-3 pb-2 overflow-hidden">
+        {card.previews.length > 0 ? (
+          <div className="space-y-0.5">
+            {card.previews.map((t) => (
+              <button
+                key={t.id}
+                onClick={(e) => { e.stopPropagation(); onTaskClick(t); }}
+                className="w-full flex items-center gap-1.5 px-1.5 py-1 rounded-[6px] hover:bg-[var(--card2)] transition-colors text-left"
+              >
+                <span
+                  className="w-[6px] h-[6px] rounded-full shrink-0"
+                  style={{ backgroundColor: PRIORITY_DOT[t.priority || ""] || "var(--border2)" }}
+                />
+                <span className="flex-1 text-[11px] text-[var(--text2)] truncate">
+                  {t.mission ? <span className="text-[var(--purple)]">{t.mission}</span> : null}
+                  {t.mission ? " — " : ""}
+                  {t.text}
+                </span>
+                {t.progress && (
+                  <span className="text-[9px] font-bold text-[var(--accent)] tabular-nums shrink-0">{t.progress}</span>
+                )}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[11px] text-[var(--text3)] px-1.5 py-1">No open tasks</p>
+        )}
       </div>
 
-      {/* Subtitle: brief or status */}
-      <p className="text-[11px] text-[var(--text3)] mb-3 truncate">
-        {card.brief || (card.status ? card.status : `${card.open_tasks} open`)}
-      </p>
-
-      {/* Task previews */}
-      {card.previews.length > 0 ? (
-        <div className="space-y-1.5 mb-3">
-          {card.previews.map((t) => (
-            <div key={t.id} className="flex items-center gap-2">
-              <span
-                className="w-[7px] h-[7px] rounded-full shrink-0"
-                style={{ backgroundColor: PRIORITY_DOT[t.priority || ""] || "var(--border2)" }}
-              />
-              <span className="text-[12px] text-[var(--text2)] truncate">{t.text}</span>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className="text-[12px] text-[var(--text3)] mb-3">No open tasks</p>
-      )}
-
-      {/* Footer: critical count */}
-      {card.p0 > 0 && (
-        <span className="text-[11px] font-bold text-[#ff453a]">{card.p0} critical</span>
-      )}
-    </button>
+      {/* Footer: priority summary */}
+      <div className="flex items-center gap-2 px-4 pb-2.5 shrink-0">
+        {card.p0 > 0 && <span className="text-[10px] font-bold text-[#ff453a]">{card.p0} critical</span>}
+        {card.p1 > 0 && <span className="text-[10px] text-[#ff9f0a]">{card.p1} high</span>}
+        {card.p0 === 0 && card.p1 === 0 && card.open_tasks > 0 && (
+          <span className="text-[10px] text-[var(--text3)]">{card.open_tasks} tasks</span>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -253,6 +279,7 @@ function DashboardContent() {
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [kpiFilter, setKpiFilter] = useState<KpiFilter>(null);
   const [expandedMission, setExpandedMission] = useState<string | null>(null);
+  const [modalTask, setModalTask] = useState<TaskPreview | null>(null);
 
   const fetchDashboard = useCallback(async (tab: string) => {
     setLoading(true);
@@ -331,6 +358,33 @@ function DashboardContent() {
   }, [filteredTasks]);
 
   // ── Handlers ──
+
+  async function handleModalUpdate(taskId: string, fields: Record<string, unknown>) {
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(fields),
+      });
+      if (!res.ok) throw new Error("Failed");
+      setToast("Updated");
+      await fetchDashboard(activeRoot);
+    } catch {
+      setToast("Failed to update");
+    }
+  }
+
+  async function handleModalDelete(taskId: string) {
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed");
+      setToast("Task deleted");
+      setModalTask(null);
+      await fetchDashboard(activeRoot);
+    } catch {
+      setToast("Failed to delete");
+    }
+  }
 
   async function handleTaskUpdate(taskId: string, fields: Record<string, unknown>) {
     const task = data?.tasks_by_priority.ALL.find((t) => t.id === taskId);
@@ -609,6 +663,7 @@ function DashboardContent() {
                           setSelectedCard(card.child_key);
                         }
                       }}
+                      onTaskClick={(t) => setModalTask(t)}
                     />
                   ))}
                 </div>
@@ -678,6 +733,16 @@ function DashboardContent() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Task detail modal (from card/mission clicks) */}
+      {modalTask && (
+        <TaskDetailModal
+          task={{ ...modalTask, description: null, version: null, is_owner_action: modalTask.is_owner_action ?? false, completed: false, log: null } as ModalTask}
+          onClose={() => { setModalTask(null); fetchDashboard(activeRoot); }}
+          onUpdate={handleModalUpdate}
+          onDelete={handleModalDelete}
+        />
       )}
 
       {toast && <Toast message={toast} onDismiss={() => setToast(null)} />}

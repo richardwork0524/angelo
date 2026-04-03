@@ -81,6 +81,14 @@ export async function GET(request: NextRequest) {
         id: t.id,
         text: t.text,
         priority: t.priority,
+        mission: t.mission,
+        progress: t.progress,
+        task_code: t.task_code,
+        surface: t.surface,
+        is_owner_action: t.is_owner_action,
+        bucket: t.bucket,
+        project_key: t.project_key,
+        updated_at: t.updated_at,
       }));
 
       return {
