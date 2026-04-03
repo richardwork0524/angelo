@@ -41,6 +41,7 @@ interface Task {
   log: { timestamp: string; type: string; message: string; section?: number }[] | null;
   parent_task_id: string | null;
   completed: boolean;
+  task_code: string | null;
 }
 
 interface Session {
@@ -92,22 +93,27 @@ function Skeleton() {
   );
 }
 
-/* ── KPI Pill Row (inspired by reference) ── */
+/* ── KPI Pill Row (clickable filters) ── */
 
-function KpiRow({ stats }: { stats: Data["stats"] }) {
-  const items = [
-    { value: stats.p0, label: "Critical", color: "#ff453a", bg: "var(--red-dim)" },
-    { value: stats.this_week, label: "This Week", color: "#0a84ff", bg: "var(--accent-dim)" },
-    { value: stats.this_month, label: "This Month", color: "#bf5af2", bg: "var(--purple-dim)" },
-    { value: stats.open, label: "Open", color: "var(--text2)", bg: "var(--card)" },
+type KpiFilter = "P0" | "THIS_WEEK" | "THIS_MONTH" | "ALL" | null;
+
+function KpiRow({ stats, activeFilter, onFilter }: { stats: Data["stats"]; activeFilter: KpiFilter; onFilter: (f: KpiFilter) => void }) {
+  const items: { key: KpiFilter; value: number; label: string; color: string; bg: string }[] = [
+    { key: "P0", value: stats.p0, label: "Critical", color: "#ff453a", bg: "var(--red-dim)" },
+    { key: "THIS_WEEK", value: stats.this_week, label: "This Week", color: "#0a84ff", bg: "var(--accent-dim)" },
+    { key: "THIS_MONTH", value: stats.this_month, label: "This Month", color: "#bf5af2", bg: "var(--purple-dim)" },
+    { key: "ALL", value: stats.open, label: "Open", color: "var(--text2)", bg: "var(--card)" },
   ];
   return (
     <div className="flex gap-2 px-6 py-3">
       {items.map((item) => (
-        <div
+        <button
           key={item.label}
-          className="flex-1 flex flex-col items-center py-2.5 rounded-[12px] border border-[var(--border)]"
-          style={{ backgroundColor: item.bg }}
+          onClick={() => onFilter(activeFilter === item.key ? null : item.key)}
+          className={`flex-1 flex flex-col items-center py-2.5 rounded-[12px] border transition-all ${
+            activeFilter === item.key ? "border-current ring-1 ring-current scale-[1.02]" : "border-[var(--border)] hover:border-[var(--border2)]"
+          }`}
+          style={{ backgroundColor: item.bg, color: activeFilter === item.key ? item.color : undefined }}
         >
           <span className="text-[20px] font-bold tabular-nums" style={{ color: item.color }}>
             {item.value}
@@ -115,7 +121,7 @@ function KpiRow({ stats }: { stats: Data["stats"] }) {
           <span className="text-[11px] text-[var(--text3)] uppercase tracking-wide mt-0.5">
             {item.label}
           </span>
-        </div>
+        </button>
       ))}
     </div>
   );
@@ -212,6 +218,7 @@ function DashboardContent() {
   const [captureOpen, setCaptureOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const [kpiFilter, setKpiFilter] = useState<KpiFilter>(null);
 
   const fetchDashboard = useCallback(async (tab: string) => {
     setLoading(true);
@@ -233,6 +240,7 @@ function DashboardContent() {
     setSelectedCard(null);
     setUrgencyTab("ALL");
     setSessionsExpanded(false);
+    setKpiFilter(null);
   }
 
   async function loadAllSessions() {
@@ -247,12 +255,17 @@ function DashboardContent() {
 
   const filteredTasks = useMemo(() => {
     if (!data) return [];
-    const pool = urgencyTab === "ALL"
+    let pool = urgencyTab === "ALL"
       ? data.tasks_by_priority.ALL
       : (data.tasks_by_priority[urgencyTab as keyof Data["tasks_by_priority"]] || []);
-    if (!selectedCard) return pool;
-    return pool.filter((t) => t.project_key === selectedCard);
-  }, [data, urgencyTab, selectedCard]);
+    // KPI pill filter
+    if (kpiFilter === "P0") pool = pool.filter((t) => t.priority === "P0");
+    else if (kpiFilter === "THIS_WEEK") pool = pool.filter((t) => t.bucket === "THIS_WEEK");
+    else if (kpiFilter === "THIS_MONTH") pool = pool.filter((t) => t.bucket === "THIS_MONTH");
+    // Card filter
+    if (selectedCard) pool = pool.filter((t) => t.project_key === selectedCard);
+    return pool;
+  }, [data, urgencyTab, selectedCard, kpiFilter]);
 
   const displayedSessions = useMemo(() => {
     if (!data) return [];
@@ -390,7 +403,7 @@ function DashboardContent() {
         </div>
 
         {/* KPI pills */}
-        {data && <KpiRow stats={data.stats} />}
+        {data && <KpiRow stats={data.stats} activeFilter={kpiFilter} onFilter={setKpiFilter} />}
 
         {/* Root tabs */}
         <div className="flex items-center gap-1 px-6 pb-3 border-b border-[var(--border)]">

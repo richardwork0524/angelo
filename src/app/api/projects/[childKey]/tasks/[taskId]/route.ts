@@ -56,6 +56,11 @@ export async function PATCH(
     update.is_owner_action = body.is_owner_action;
   }
 
+  // Handle mission
+  if (body.mission !== undefined) {
+    update.mission = typeof body.mission === "string" ? body.mission.trim() || null : null;
+  }
+
   // Handle progress (format: "N/M" where N <= M)
   if (body.progress !== undefined) {
     if (body.progress === null) {

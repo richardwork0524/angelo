@@ -26,6 +26,7 @@ export interface DashboardTask {
   parent_task_id: string | null;
   completed: boolean;
   updated_at: string;
+  task_code: string | null;
 }
 
 interface Props {
@@ -61,6 +62,55 @@ function timeAgo(ts: string): string {
   if (hrs < 24) return `${hrs}h ago`;
   const days = Math.floor(hrs / 24);
   return `${days}d ago`;
+}
+
+/* ── Mission Field (editable if blank) ── */
+
+function MissionField({ mission, version, taskCode, locked, onSave }: {
+  mission: string | null;
+  version: string | null;
+  taskCode: string | null;
+  locked: boolean;
+  onSave: (mission: string) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(mission || "");
+
+  async function handleSave() {
+    if (value.trim() && value.trim() !== mission) {
+      await onSave(value.trim());
+    }
+    setEditing(false);
+  }
+
+  return (
+    <div className="flex items-center gap-3 flex-wrap text-[11px]">
+      {taskCode && (
+        <span className="font-mono text-[var(--accent)] bg-[var(--accent-dim)] px-1.5 py-[1px] rounded">{taskCode}</span>
+      )}
+      {version && <span className="text-[var(--text3)]">{version}</span>}
+      {mission ? (
+        <span className="text-[var(--purple)]">Mission: {mission}</span>
+      ) : !locked ? (
+        editing ? (
+          <input
+            type="text"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onBlur={handleSave}
+            onKeyDown={(e) => { if (e.key === "Enter") handleSave(); if (e.key === "Escape") setEditing(false); }}
+            placeholder="e.g. reducing token consumption"
+            autoFocus
+            className="text-[11px] text-[var(--text)] bg-[var(--bg)] border border-[var(--purple)] rounded px-2 py-0.5 w-[200px] focus:outline-none"
+          />
+        ) : (
+          <button onClick={() => setEditing(true)} className="text-[var(--text3)] hover:text-[var(--purple)]">
+            + Set mission
+          </button>
+        )
+      ) : null}
+    </div>
+  );
 }
 
 /* ── Component ── */
@@ -165,10 +215,12 @@ export function ExpandableTaskRow({ task, subtasks, expanded, onToggleExpand, on
         {/* Content */}
         <div className="flex-1 min-w-0">
           <p className={`text-[13px] leading-[1.4] ${task.completed ? "text-[var(--text3)] line-through" : "text-[var(--text)]"}`}>
+            {task.task_code && <span className="text-[var(--accent)] font-mono text-[11px] mr-1.5">{task.task_code}</span>}
             {task.text}
           </p>
           <div className="flex items-center gap-2 mt-1">
             <span className="text-[11px] text-[var(--text3)]">{task.project_key}</span>
+            {task.mission && <span className="text-[11px] text-[var(--purple)] truncate max-w-[140px]">{task.mission}</span>}
             {task.surface && (
               <span className="inline-flex items-center gap-1">
                 <span className="w-[5px] h-[5px] rounded-full" style={{ backgroundColor: SURFACE_DOT[task.surface] }} />
@@ -277,13 +329,14 @@ export function ExpandableTaskRow({ task, subtasks, expanded, onToggleExpand, on
             </div>
           </div>
 
-          {/* Mission / Meta */}
-          {(task.mission || task.version) && (
-            <div className="flex items-center gap-3 text-[11px]">
-              {task.mission && <span className="text-[var(--purple)]">Mission: {task.mission}</span>}
-              {task.version && <span className="text-[var(--text3)]">{task.version}</span>}
-            </div>
-          )}
+          {/* Task code + Mission / Meta */}
+          <MissionField
+            mission={task.mission}
+            version={task.version}
+            taskCode={task.task_code}
+            locked={isLocked}
+            onSave={async (m) => { await onUpdate(task.id, { mission: m }); }}
+          />
 
           {/* Progress sections */}
           {task.progress && progress ? (
