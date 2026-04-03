@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { Suspense, useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Fab } from "@/components/fab";
 import { QuickCaptureSheet } from "@/components/quick-capture-sheet";
@@ -8,18 +8,20 @@ import { Toast } from "@/components/toast";
 
 /* ── Types ── */
 
+interface TaskPreview { id: string; text: string; priority: string | null }
+
 interface Card {
   child_key: string;
   display_name: string;
   status: string | null;
-  build_phase: string | null;
   brief: string | null;
-  last_session_date: string | null;
-  current_version: string | null;
   open_tasks: number;
+  this_week: number;
+  this_month: number;
   p0: number;
   p1: number;
   p2: number;
+  previews: TaskPreview[];
   is_leaf: boolean;
 }
 
@@ -45,7 +47,7 @@ interface Session {
 }
 
 interface Data {
-  stats: { open: number; p0: number; p1: number; p2: number };
+  stats: { open: number; p0: number; p1: number; p2: number; this_week: number; this_month: number };
   cards: Card[];
   tasks_by_priority: { P0: Task[]; P1: Task[]; P2: Task[]; ALL: Task[] };
   sessions: Session[];
@@ -78,20 +80,85 @@ function Skeleton() {
     <div className="h-full flex items-center justify-center bg-[var(--bg)]">
       <div className="flex flex-col items-center gap-3">
         <div className="w-8 h-8 rounded-full border-2 border-[var(--accent)] border-t-transparent animate-spin" />
-        <span className="text-[13px] text-[var(--text3)]">Loading dashboard...</span>
+        <span className="text-[13px] text-[var(--text3)]">Loading...</span>
       </div>
     </div>
   );
 }
 
-/* ── Stat Pill ── */
+/* ── KPI Pill Row (inspired by reference) ── */
 
-function StatPill({ value, label, color }: { value: number; label: string; color: string }) {
+function KpiRow({ stats }: { stats: Data["stats"] }) {
+  const items = [
+    { value: stats.p0, label: "Critical", color: "#ff453a", bg: "var(--red-dim)" },
+    { value: stats.this_week, label: "This Week", color: "#0a84ff", bg: "var(--accent-dim)" },
+    { value: stats.this_month, label: "This Month", color: "#bf5af2", bg: "var(--purple-dim)" },
+    { value: stats.open, label: "Open", color: "var(--text2)", bg: "var(--card)" },
+  ];
   return (
-    <div className="flex items-center gap-2 px-3 py-1.5 rounded-[8px] bg-[var(--card)]">
-      <span className="text-[16px] font-bold tabular-nums" style={{ color }}>{value}</span>
-      <span className="text-[11px] text-[var(--text3)] uppercase tracking-wide">{label}</span>
+    <div className="flex gap-2 px-6 py-3">
+      {items.map((item) => (
+        <div
+          key={item.label}
+          className="flex-1 flex flex-col items-center py-2.5 rounded-[12px] border border-[var(--border)]"
+          style={{ backgroundColor: item.bg }}
+        >
+          <span className="text-[20px] font-bold tabular-nums" style={{ color: item.color }}>
+            {item.value}
+          </span>
+          <span className="text-[10px] text-[var(--text3)] uppercase tracking-wide mt-0.5">
+            {item.label}
+          </span>
+        </div>
+      ))}
     </div>
+  );
+}
+
+/* ── Company Card (reference-style: 2-col grid with task previews) ── */
+
+function CompanyCard({ card, onClick }: { card: Card; onClick: () => void }) {
+  const hasP0 = card.p0 > 0;
+
+  return (
+    <button
+      onClick={onClick}
+      className="w-full text-left rounded-[16px] bg-[var(--card)] border border-[var(--border)] p-4 hover:border-[var(--border2)] hover:bg-[var(--card2)] transition-all active:scale-[0.98]"
+    >
+      {/* Header: name + open count */}
+      <div className="flex items-start justify-between mb-1">
+        <span className={`text-[15px] font-bold ${hasP0 ? "text-[#ff453a]" : "text-[var(--accent)]"}`}>
+          {card.display_name}
+        </span>
+      </div>
+
+      {/* Subtitle: brief or status */}
+      <p className="text-[11px] text-[var(--text3)] mb-3 truncate">
+        {card.brief || (card.status ? card.status : `${card.open_tasks} open`)}
+      </p>
+
+      {/* Task previews */}
+      {card.previews.length > 0 ? (
+        <div className="space-y-1.5 mb-3">
+          {card.previews.map((t) => (
+            <div key={t.id} className="flex items-center gap-2">
+              <span
+                className="w-[7px] h-[7px] rounded-full shrink-0"
+                style={{ backgroundColor: PRIORITY_DOT[t.priority || ""] || "var(--border2)" }}
+              />
+              <span className="text-[12px] text-[var(--text2)] truncate">{t.text}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-[12px] text-[var(--text3)] mb-3">No open tasks</p>
+      )}
+
+      {/* Footer: critical count */}
+      {card.p0 > 0 && (
+        <span className="text-[11px] font-bold text-[#ff453a]">{card.p0} critical</span>
+      )}
+    </button>
   );
 }
 
@@ -102,62 +169,12 @@ function SessionRow({ s }: { s: Session }) {
   return (
     <button
       onClick={() => router.push(`/session/${s.id}`)}
-      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-[8px] hover:bg-[var(--card)] transition-colors text-left group"
+      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-[8px] hover:bg-[var(--card)] transition-colors text-left"
     >
       <div className="w-[8px] h-[8px] rounded-full shrink-0" style={{ backgroundColor: SURFACE_DOT[s.surface || ""] || "var(--text3)" }} />
       <div className="flex-1 min-w-0">
-        <p className="text-[13px] text-[var(--text)] truncate group-hover:text-[var(--accent)] transition-colors">{s.title}</p>
+        <p className="text-[13px] text-[var(--text)] truncate">{s.title}</p>
         <p className="text-[11px] text-[var(--text3)]">{s.project_key} · {s.session_date}</p>
-      </div>
-    </button>
-  );
-}
-
-/* ── Project Card (task manager style) ── */
-
-function ProjectCard({ card, selected, onClick }: { card: Card; selected: boolean; onClick: () => void }) {
-  const total = card.open_tasks;
-  const hasUrgent = card.p0 > 0;
-
-  return (
-    <button
-      onClick={onClick}
-      className={`w-full text-left rounded-[12px] border transition-all p-4 ${
-        selected
-          ? "bg-[var(--accent-dim)] border-[var(--accent)] scale-[1.01]"
-          : "bg-[var(--card)] border-[var(--border)] hover:border-[var(--border2)] hover:bg-[var(--card2)]"
-      }`}
-    >
-      {/* Row 1: Name + count */}
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2 min-w-0">
-          {hasUrgent && <span className="w-[8px] h-[8px] rounded-full bg-[#ff453a] shrink-0 animate-pulse" />}
-          <span className="text-[14px] font-semibold text-[var(--text)] truncate">{card.display_name}</span>
-        </div>
-        <span className={`text-[20px] font-bold tabular-nums ${total > 0 ? "text-[var(--text)]" : "text-[var(--text3)]"}`}>
-          {total}
-        </span>
-      </div>
-
-      {/* Row 2: Priority breakdown bar */}
-      {total > 0 ? (
-        <div className="flex items-center gap-1 h-[6px] rounded-full overflow-hidden bg-[var(--border)]">
-          {card.p0 > 0 && <div className="h-full rounded-full" style={{ width: `${(card.p0 / total) * 100}%`, backgroundColor: "#ff453a" }} />}
-          {card.p1 > 0 && <div className="h-full rounded-full" style={{ width: `${(card.p1 / total) * 100}%`, backgroundColor: "#ff9f0a" }} />}
-          {card.p2 > 0 && <div className="h-full rounded-full" style={{ width: `${(card.p2 / total) * 100}%`, backgroundColor: "#ffd60a" }} />}
-          {total - card.p0 - card.p1 - card.p2 > 0 && (
-            <div className="h-full rounded-full" style={{ width: `${((total - card.p0 - card.p1 - card.p2) / total) * 100}%`, backgroundColor: "var(--text3)" }} />
-          )}
-        </div>
-      ) : (
-        <p className="text-[11px] text-[var(--text3)]">No open tasks</p>
-      )}
-
-      {/* Row 3: Meta */}
-      <div className="flex items-center gap-2 mt-2">
-        {card.p0 > 0 && <span className="text-[10px] font-bold text-[#ff453a]">{card.p0} critical</span>}
-        {card.p1 > 0 && <span className="text-[10px] font-bold text-[#ff9f0a]">{card.p1} high</span>}
-        {card.current_version && <span className="text-[10px] text-[var(--text3)] ml-auto">{card.current_version}</span>}
       </div>
     </button>
   );
@@ -168,13 +185,10 @@ function ProjectCard({ card, selected, onClick }: { card: Card; selected: boolea
 function TaskRow({ t }: { t: Task }) {
   return (
     <div className="flex items-start gap-3 px-4 py-3 rounded-[8px] bg-[var(--card)] border border-[var(--border)] hover:border-[var(--border2)] transition-colors">
-      {/* Priority dot */}
       <span
         className="w-[8px] h-[8px] rounded-full shrink-0 mt-[5px]"
         style={{ backgroundColor: PRIORITY_DOT[t.priority || ""] || "var(--border2)" }}
       />
-
-      {/* Content */}
       <div className="flex-1 min-w-0">
         <p className="text-[13px] text-[var(--text)] leading-[1.4]">{t.text}</p>
         <div className="flex items-center gap-2 mt-1">
@@ -195,12 +209,8 @@ function TaskRow({ t }: { t: Task }) {
           )}
         </div>
       </div>
-
-      {/* Owner badge */}
       {t.is_owner_action && (
-        <span className="text-[9px] font-bold text-[var(--cyan)] bg-[var(--cyan-dim)] px-1.5 py-[2px] rounded shrink-0">
-          YOU
-        </span>
+        <span className="text-[9px] font-bold text-[var(--cyan)] bg-[var(--cyan-dim)] px-1.5 py-[2px] rounded shrink-0">YOU</span>
       )}
     </div>
   );
@@ -243,9 +253,7 @@ function DashboardContent() {
     setLoading(false);
   }, []);
 
-  useEffect(() => {
-    fetchDashboard(activeRoot);
-  }, [activeRoot, fetchDashboard]);
+  useEffect(() => { fetchDashboard(activeRoot); }, [activeRoot, fetchDashboard]);
 
   function handleTabChange(key: string) {
     setActiveRoot(key);
@@ -255,21 +263,15 @@ function DashboardContent() {
   }
 
   async function loadAllSessions() {
-    if (allSessions.length > 0) {
-      setSessionsExpanded(!sessionsExpanded);
-      return;
-    }
+    if (allSessions.length > 0) { setSessionsExpanded(!sessionsExpanded); return; }
     try {
       const res = await fetch(`/api/sessions?parent=${activeRoot}&limit=50`);
       const d = await res.json();
       setAllSessions(d.sessions || []);
       setSessionsExpanded(true);
-    } catch {
-      setSessionsExpanded(!sessionsExpanded);
-    }
+    } catch { setSessionsExpanded(!sessionsExpanded); }
   }
 
-  // Filter tasks by selected card + urgency
   const filteredTasks = useMemo(() => {
     if (!data) return [];
     const pool = urgencyTab === "ALL"
@@ -290,24 +292,28 @@ function DashboardContent() {
     return data.cards.map((c) => ({ child_key: c.child_key, display_name: c.display_name }));
   }, [data]);
 
+  // View mode: "cards" (grid overview) or "tasks" (filtered task list)
+  const viewMode = selectedCard ? "tasks" : "cards";
+
   return (
     <div className="h-full flex flex-col overflow-hidden bg-[var(--bg)]">
-      {/* ═══ TOP BAR ═══ */}
-      <header className="shrink-0 border-b border-[var(--border)]">
-        {/* Row 1: Title + Stats */}
-        <div className="flex items-center justify-between px-6 pt-4 pb-2">
-          <h1 className="text-[20px] font-bold text-[var(--text)]">Angelo</h1>
-          {data && (
-            <div className="flex items-center gap-2">
-              <StatPill value={data.stats.p0} label="critical" color="#ff453a" />
-              <StatPill value={data.stats.p1} label="high" color="#ff9f0a" />
-              <StatPill value={data.stats.open} label="open" color="var(--text2)" />
-            </div>
-          )}
+      {/* ═══ HEADER ═══ */}
+      <header className="shrink-0">
+        {/* Title row */}
+        <div className="flex items-center justify-between px-6 pt-4 pb-1">
+          <h1 className="text-[24px] font-bold text-[var(--text)]">
+            {ROOT_TABS.find((t) => t.key === activeRoot)?.label || "Angelo"}
+          </h1>
+          <div className="w-[36px] h-[36px] rounded-full bg-[var(--accent)] flex items-center justify-center text-white text-[14px] font-bold">
+            R
+          </div>
         </div>
 
-        {/* Row 2: Root tabs */}
-        <div className="flex items-center gap-1 px-6 pb-3">
+        {/* KPI pills */}
+        {data && <KpiRow stats={data.stats} />}
+
+        {/* Root tabs */}
+        <div className="flex items-center gap-1 px-6 pb-3 border-b border-[var(--border)]">
           {ROOT_TABS.map((tab) => (
             <button
               key={tab.key}
@@ -330,63 +336,47 @@ function DashboardContent() {
         <Skeleton />
       ) : !data ? (
         <div className="flex-1 flex items-center justify-center">
-          <div className="text-center">
-            <p className="text-[14px] text-[var(--text3)] mb-2">Failed to load dashboard</p>
-            <button onClick={() => fetchDashboard(activeRoot)} className="text-[13px] text-[var(--accent)]">
-              Retry
-            </button>
-          </div>
+          <button onClick={() => fetchDashboard(activeRoot)} className="text-[13px] text-[var(--accent)]">Retry</button>
         </div>
       ) : (
         <div className="flex-1 flex min-h-0 overflow-hidden">
-          {/* ── LEFT PANEL: Cards + Sessions ── */}
-          <div className="w-[340px] shrink-0 flex flex-col border-r border-[var(--border)] overflow-hidden">
-            {/* Sessions section */}
-            <div className={`shrink-0 ${sessionsExpanded ? "flex-1 overflow-hidden flex flex-col" : ""}`}>
-              <div className="flex items-center justify-between px-4 py-3">
-                <h2 className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-[0.08em]">
-                  Recent Sessions
-                </h2>
+          {/* ── LEFT: Card grid + Sessions ── */}
+          <div className="w-[420px] shrink-0 flex flex-col border-r border-[var(--border)] overflow-hidden">
+            {/* Sessions (collapsible) */}
+            <div className={sessionsExpanded ? "flex-1 flex flex-col overflow-hidden" : "shrink-0"}>
+              <div className="flex items-center justify-between px-4 py-2.5">
+                <h2 className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-[0.08em]">Sessions</h2>
                 <button onClick={loadAllSessions} className="text-[11px] text-[var(--accent)] hover:underline">
-                  {sessionsExpanded ? "Collapse" : `View All (${data.session_total})`}
+                  {sessionsExpanded ? "Collapse" : `All (${data.session_total})`}
                 </button>
               </div>
               <div className={`px-2 ${sessionsExpanded ? "overflow-y-auto flex-1" : ""}`}>
                 {displayedSessions.map((s) => <SessionRow key={s.id} s={s} />)}
-                {displayedSessions.length === 0 && (
-                  <p className="text-[12px] text-[var(--text3)] text-center py-4">No sessions</p>
-                )}
               </div>
             </div>
 
-            {/* Divider */}
             {!sessionsExpanded && <div className="h-px bg-[var(--border)] mx-4" />}
 
-            {/* Project cards */}
+            {/* 2-column card grid (reference-inspired) */}
             {!sessionsExpanded && (
               <div className="flex-1 overflow-y-auto px-4 py-3 min-h-0">
                 <div className="flex items-center justify-between mb-3">
                   <h2 className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-[0.08em]">
-                    {ROOT_TABS.find((t) => t.key === activeRoot)?.label || "Projects"}
+                    {ROOT_TABS.find((t) => t.key === activeRoot)?.label}
                   </h2>
                   {selectedCard && (
-                    <button
-                      onClick={() => setSelectedCard(null)}
-                      className="text-[11px] text-[var(--accent)] hover:underline"
-                    >
+                    <button onClick={() => setSelectedCard(null)} className="text-[11px] text-[var(--accent)]">
                       Show All
                     </button>
                   )}
                 </div>
-                <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-3">
                   {data.cards.map((card) => (
-                    <ProjectCard
+                    <CompanyCard
                       key={card.child_key}
                       card={card}
-                      selected={selectedCard === card.child_key}
                       onClick={() => {
                         if (selectedCard === card.child_key) {
-                          // Double-click: navigate to project detail
                           if (card.is_leaf) router.push(`/project/${card.child_key}`);
                           else setSelectedCard(null);
                         } else {
@@ -400,43 +390,32 @@ function DashboardContent() {
             )}
           </div>
 
-          {/* ── RIGHT PANEL: Tasks ── */}
+          {/* ── RIGHT: Task list ── */}
           <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
             {/* Urgency tabs */}
             <div className="shrink-0 flex items-center gap-1 px-6 py-3 border-b border-[var(--border)]">
               {URGENCY_TABS.map((tab) => {
                 const count = tab.key === "ALL"
                   ? filteredTasks.length
-                  : filteredTasks.filter((t) => t.priority === tab.key).length;
+                  : (data.tasks_by_priority[tab.key as keyof Data["tasks_by_priority"]] || []).length;
                 const isActive = urgencyTab === tab.key;
-
-                // For ALL tab, use the full filtered count
-                const displayCount = tab.key === "ALL"
-                  ? filteredTasks.length
-                  : (data?.tasks_by_priority[tab.key as keyof Data["tasks_by_priority"]] || []).length;
-
                 return (
                   <button
                     key={tab.key}
                     onClick={() => setUrgencyTab(tab.key)}
                     className={`flex items-center gap-2 px-4 py-2 rounded-[8px] text-[13px] font-semibold transition-all ${
-                      isActive
-                        ? "bg-[var(--card)] text-[var(--text)] shadow-sm"
-                        : "text-[var(--text3)] hover:text-[var(--text2)]"
+                      isActive ? "bg-[var(--card)] text-[var(--text)] shadow-sm" : "text-[var(--text3)] hover:text-[var(--text2)]"
                     }`}
                   >
                     {tab.color && <span className="w-[8px] h-[8px] rounded-full" style={{ backgroundColor: tab.color }} />}
                     {tab.label}
-                    <span className={`text-[11px] tabular-nums ${isActive ? "text-[var(--text2)]" : "text-[var(--text3)]"}`}>
-                      {displayCount}
-                    </span>
+                    <span className={`text-[11px] tabular-nums ${isActive ? "text-[var(--text2)]" : "text-[var(--text3)]"}`}>{count}</span>
                   </button>
                 );
               })}
-
               {selectedCard && (
                 <span className="ml-auto text-[12px] text-[var(--accent)] bg-[var(--accent-dim)] px-3 py-1 rounded-full">
-                  {data?.cards.find((c) => c.child_key === selectedCard)?.display_name}
+                  {data.cards.find((c) => c.child_key === selectedCard)?.display_name}
                 </span>
               )}
             </div>
@@ -444,16 +423,14 @@ function DashboardContent() {
             {/* Task list */}
             <div className="flex-1 overflow-y-auto px-6 py-3">
               {filteredTasks.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-center">
+                <div className="flex flex-col items-center justify-center h-full">
                   <div className="w-12 h-12 rounded-full bg-[var(--card)] flex items-center justify-center mb-3">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" strokeWidth="1.5">
                       <path d="M9 11l3 3L22 4" strokeLinecap="round" strokeLinejoin="round" />
                       <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                   </div>
-                  <p className="text-[14px] text-[var(--text3)]">
-                    {selectedCard ? "No tasks for this project" : "No tasks in this category"}
-                  </p>
+                  <p className="text-[14px] text-[var(--text3)]">No tasks</p>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -471,10 +448,7 @@ function DashboardContent() {
         open={captureOpen}
         onClose={() => setCaptureOpen(false)}
         projects={leafProjects}
-        onSubmitted={() => {
-          fetchDashboard(activeRoot);
-          setToast("Task added");
-        }}
+        onSubmitted={() => { fetchDashboard(activeRoot); setToast("Task added"); }}
       />
     </div>
   );

@@ -52,35 +52,50 @@ export async function GET(request: NextRequest) {
       else tasksByPriority.NONE!.push(t);
     }
 
-    // 6. Build project cards with inline task counts
+    // 6. Build project cards with inline task counts + previews
     const directChildren = (allProjects || []).filter((p) => p.parent_key === parentKey);
     const cards = directChildren.map((p) => {
       const childLeaves = getDescendantLeaves(p.child_key);
       let openCount = 0;
       let p0 = 0, p1 = 0, p2 = 0;
+      let thisWeek = 0, thisMonth = 0;
+      const cardTasks: typeof tasks = [];
       for (const lk of childLeaves) {
         const lt = tasksByProject.get(lk) || [];
         openCount += lt.length;
         for (const t of lt) {
+          cardTasks.push(t);
           if (t.priority === "P0") p0++;
           else if (t.priority === "P1") p1++;
           else if (t.priority === "P2") p2++;
+          if (t.bucket === "THIS_WEEK") thisWeek++;
+          else if (t.bucket === "THIS_MONTH") thisMonth++;
         }
       }
+      // Top 3 task previews (prioritize P0 > P1 > P2)
+      const sorted = cardTasks.sort((a, b) => {
+        const pOrder: Record<string, number> = { P0: 0, P1: 1, P2: 2 };
+        return (pOrder[a.priority || ""] ?? 3) - (pOrder[b.priority || ""] ?? 3);
+      });
+      const previews = sorted.slice(0, 3).map((t) => ({
+        id: t.id,
+        text: t.text,
+        priority: t.priority,
+      }));
+
       return {
         child_key: p.child_key,
         display_name: p.display_name,
         status: p.status,
-        build_phase: p.build_phase,
         brief: p.brief,
-        last_session_date: p.last_session_date,
-        current_version: p.current_version,
         open_tasks: openCount,
+        this_week: thisWeek,
+        this_month: thisMonth,
         p0,
         p1,
         p2,
-        is_leaf: !directChildren.some((c) => c.parent_key === p.child_key) &&
-          !(allProjects || []).some((c) => c.parent_key === p.child_key),
+        previews,
+        is_leaf: !(allProjects || []).some((c) => c.parent_key === p.child_key),
       };
     });
 
@@ -89,10 +104,12 @@ export async function GET(request: NextRequest) {
     const p0Total = tasksByPriority.P0?.length || 0;
     const p1Total = tasksByPriority.P1?.length || 0;
     const p2Total = tasksByPriority.P2?.length || 0;
+    const weekTotal = (tasks || []).filter((t) => t.bucket === "THIS_WEEK").length;
+    const monthTotal = (tasks || []).filter((t) => t.bucket === "THIS_MONTH").length;
 
     return NextResponse.json({
       parent_key: parentKey,
-      stats: { open: totalOpen, p0: p0Total, p1: p1Total, p2: p2Total },
+      stats: { open: totalOpen, p0: p0Total, p1: p1Total, p2: p2Total, this_week: weekTotal, this_month: monthTotal },
       cards: cards.sort((a, b) => b.open_tasks - a.open_tasks),
       tasks_by_priority: {
         P0: tasksByPriority.P0 || [],
