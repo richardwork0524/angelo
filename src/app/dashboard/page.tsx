@@ -64,10 +64,10 @@ interface Data {
 /* ── Constants ── */
 
 const ROOT_TABS = [
-  { key: "company", label: "Company", color: "#0a84ff" },
-  { key: "development", label: "Dev", color: "#bf5af2" },
   { key: "general", label: "General", color: "#30d158" },
   { key: "group-strategy", label: "Strategy", color: "#ff9f0a" },
+  { key: "company", label: "Company", color: "#0a84ff" },
+  { key: "development", label: "Dev", color: "#bf5af2" },
 ];
 
 const URGENCY_TABS = [
@@ -208,7 +208,7 @@ function DashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const [activeRoot, setActiveRoot] = useState(searchParams.get("tab") || "company");
+  const [activeRoot, setActiveRoot] = useState(searchParams.get("tab") || "general");
   const [data, setData] = useState<Data | null>(null);
   const [loading, setLoading] = useState(true);
   const [sessionsExpanded, setSessionsExpanded] = useState(false);
