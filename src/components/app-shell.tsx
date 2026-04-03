@@ -10,9 +10,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   if (isDesktop) {
     return (
-      <div className="flex min-h-screen bg-[var(--bg)]">
+      <div className="flex h-screen overflow-hidden bg-[var(--bg)]">
         <Suspense fallback={
-          <aside className="w-[280px] shrink-0 h-screen sticky top-0 bg-[var(--surface)] border-r border-[var(--border)]">
+          <aside className="w-[280px] shrink-0 h-screen bg-[var(--surface)] border-r border-[var(--border)]">
             <div className="px-5 py-5">
               <div className="h-5 w-24 bg-[var(--card)] animate-pulse rounded" />
               <div className="h-3 w-32 bg-[var(--card)] animate-pulse rounded mt-2" />
@@ -21,7 +21,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         }>
           <Sidebar />
         </Suspense>
-        <main className="flex-1 min-h-screen">{children}</main>
+        <main className="flex-1 h-screen overflow-hidden">{children}</main>
       </div>
     );
   }
