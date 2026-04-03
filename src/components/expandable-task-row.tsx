@@ -20,6 +20,7 @@ export interface DashboardTask {
   surface: string | null;
   is_owner_action: boolean;
   mission: string | null;
+  version: string | null;
   progress: string | null;
   log: LogEntry[] | null;
   parent_task_id: string | null;

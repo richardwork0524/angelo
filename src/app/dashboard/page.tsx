@@ -35,6 +35,7 @@ interface Task {
   surface: string | null;
   is_owner_action: boolean;
   mission: string | null;
+  version: string | null;
   updated_at: string;
   progress: string | null;
   log: { timestamp: string; type: string; message: string; section?: number }[] | null;
