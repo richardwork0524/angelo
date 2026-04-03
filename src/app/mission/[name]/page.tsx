@@ -7,19 +7,24 @@ import { PullToRefresh } from "@/components/pull-to-refresh";
 import { ErrorBanner } from "@/components/error-banner";
 import { EmptyState } from "@/components/empty-state";
 import { Toast } from "@/components/toast";
+import { TaskDetailModal, type ModalTask } from "@/components/task-detail-modal";
 
 interface MissionTask {
   id: string;
   text: string;
+  description: string | null;
   project_key: string;
   bucket: string;
   priority: string | null;
   surface: string | null;
   is_owner_action: boolean;
   task_code: string | null;
+  mission: string | null;
   version: string | null;
   updated_at: string;
   completed: boolean;
+  progress: string | null;
+  log: { timestamp: string; type: string; message: string }[] | null;
 }
 
 interface MissionDetail {
@@ -44,6 +49,7 @@ export default function MissionDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [showCompleted, setShowCompleted] = useState(false);
+  const [selectedTask, setSelectedTask] = useState<MissionTask | null>(null);
 
   const fetchMission = useCallback(async () => {
     try {
@@ -62,6 +68,33 @@ export default function MissionDetailPage() {
   useEffect(() => {
     fetchMission();
   }, [fetchMission]);
+
+  async function handleTaskUpdate(taskId: string, fields: Record<string, unknown>) {
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(fields),
+      });
+      if (!res.ok) throw new Error("Failed");
+      setToast("Updated");
+      await fetchMission();
+    } catch {
+      setToast("Failed to update");
+    }
+  }
+
+  async function handleTaskDelete(taskId: string) {
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed");
+      setToast("Task deleted");
+      setSelectedTask(null);
+      await fetchMission();
+    } catch {
+      setToast("Failed to delete");
+    }
+  }
 
   return (
     <div className="flex flex-col min-h-screen bg-[var(--bg)] pb-16">
@@ -116,9 +149,7 @@ export default function MissionDetailPage() {
                     </div>
                   )}
                   {mission.stats.completed > 0 && (
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[12px] text-[var(--text3)]">✓ {mission.stats.completed} done</span>
-                    </div>
+                    <span className="text-[12px] text-[var(--text3)]">✓ {mission.stats.completed} done</span>
                   )}
                 </div>
               </div>
@@ -129,9 +160,9 @@ export default function MissionDetailPage() {
               <EmptyState message="No tasks in this mission yet." />
             ) : (
               <div className="px-4 py-3">
-                <BucketSection title="THIS WEEK" tasks={mission.tasks.this_week} color="var(--accent)" />
-                <BucketSection title="THIS MONTH" tasks={mission.tasks.this_month} color="#bf5af2" />
-                <BucketSection title="PARKED" tasks={mission.tasks.parked} color="var(--text3)" />
+                <BucketSection title="THIS WEEK" tasks={mission.tasks.this_week} color="var(--accent)" onTaskClick={setSelectedTask} />
+                <BucketSection title="THIS MONTH" tasks={mission.tasks.this_month} color="#bf5af2" onTaskClick={setSelectedTask} />
+                <BucketSection title="PARKED" tasks={mission.tasks.parked} color="var(--text3)" onTaskClick={setSelectedTask} />
 
                 {mission.tasks.completed.length > 0 && (
                   <div className="mt-4">
@@ -148,7 +179,7 @@ export default function MissionDetailPage() {
                     {showCompleted && (
                       <div className="space-y-0.5">
                         {mission.tasks.completed.map((t) => (
-                          <MissionTaskRow key={t.id} task={t} />
+                          <MissionTaskRow key={t.id} task={t} onClick={() => setSelectedTask(t)} />
                         ))}
                       </div>
                     )}
@@ -160,6 +191,16 @@ export default function MissionDetailPage() {
         )}
       </PullToRefresh>
 
+      {/* Task detail modal */}
+      {selectedTask && (
+        <TaskDetailModal
+          task={selectedTask as ModalTask}
+          onClose={() => { setSelectedTask(null); fetchMission(); }}
+          onUpdate={handleTaskUpdate}
+          onDelete={handleTaskDelete}
+        />
+      )}
+
       {toast && <Toast message={toast} onDismiss={() => setToast(null)} />}
     </div>
   );
@@ -167,7 +208,7 @@ export default function MissionDetailPage() {
 
 /* ── Bucket Section ── */
 
-function BucketSection({ title, tasks, color }: { title: string; tasks: MissionTask[]; color: string }) {
+function BucketSection({ title, tasks, color, onTaskClick }: { title: string; tasks: MissionTask[]; color: string; onTaskClick: (t: MissionTask) => void }) {
   if (tasks.length === 0) return null;
   return (
     <div className="mb-4">
@@ -177,7 +218,7 @@ function BucketSection({ title, tasks, color }: { title: string; tasks: MissionT
       </div>
       <div className="space-y-0.5">
         {tasks.map((t) => (
-          <MissionTaskRow key={t.id} task={t} />
+          <MissionTaskRow key={t.id} task={t} onClick={() => onTaskClick(t)} />
         ))}
       </div>
     </div>
@@ -186,35 +227,31 @@ function BucketSection({ title, tasks, color }: { title: string; tasks: MissionT
 
 /* ── Task Row ── */
 
-function MissionTaskRow({ task }: { task: MissionTask }) {
+function MissionTaskRow({ task, onClick }: { task: MissionTask; onClick: () => void }) {
   return (
-    <div className="flex items-start gap-2.5 px-3 py-[10px] rounded-[8px] hover:bg-[var(--card)]/50 transition-colors min-h-[44px]">
-      {/* Priority dot */}
+    <button
+      onClick={onClick}
+      className="w-full flex items-start gap-2.5 px-3 py-[10px] rounded-[8px] hover:bg-[var(--card)] transition-colors min-h-[44px] text-left"
+    >
       {task.priority && (
         <span
           className="w-[7px] h-[7px] rounded-full shrink-0 mt-1.5"
           style={{ backgroundColor: PRIORITY_COLORS[task.priority] || "var(--text3)" }}
         />
       )}
-
-      {/* Task code */}
       {task.task_code && (
         <span className="text-[11px] font-mono text-[var(--accent)] shrink-0 mt-0.5">{task.task_code}</span>
       )}
-
-      {/* Task text */}
       <span className={`flex-1 text-[14px] leading-snug ${task.completed ? "text-[var(--text3)] line-through" : "text-[var(--text)]"}`}>
         {task.text}
       </span>
-
-      {/* Metadata badges */}
       <div className="flex items-center gap-1.5 shrink-0">
-        {task.is_owner_action && <span className="text-[11px]" title="Owner action">⚡</span>}
+        {task.is_owner_action && <span className="text-[11px]">⚡</span>}
         {task.surface && (
           <span className="text-[9px] px-1.5 py-0.5 rounded bg-[var(--card)] text-[var(--text3)]">{task.surface}</span>
         )}
         <span className="text-[10px] text-[var(--text3)] opacity-60">{task.project_key}</span>
       </div>
-    </div>
+    </button>
   );
 }

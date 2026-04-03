@@ -460,7 +460,7 @@ function DashboardContent() {
                 <div key={i} className="flex items-center gap-1.5 shrink-0">
                   <span className="w-[6px] h-[6px] rounded-full" style={{ backgroundColor: HOOK_COLORS[log.hook_name] || "#636366" }} />
                   <span className="text-[10px] text-[var(--text3)] font-medium">{log.hook_name}</span>
-                  <span className="text-[10px] text-[var(--text3)] opacity-60 max-w-[140px] truncate">{log.detail}</span>
+                  <span className="text-[10px] text-[var(--text3)] opacity-60">{log.detail}</span>
                   <span className="text-[10px] text-[var(--text3)] opacity-40">{ago}</span>
                 </div>
               );

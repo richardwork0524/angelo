@@ -12,7 +12,7 @@ export async function GET(
     // Fetch all tasks for this mission (open + completed)
     const { data: tasks, error } = await supabase
       .from("angelo_tasks")
-      .select("id, text, project_key, bucket, priority, surface, is_owner_action, task_type, mission, version, updated_at, progress, log, parent_task_id, completed, task_code")
+      .select("id, text, description, project_key, bucket, priority, surface, is_owner_action, task_type, mission, version, updated_at, progress, log, parent_task_id, completed, task_code")
       .eq("mission", missionName)
       .order("updated_at", { ascending: false });
 

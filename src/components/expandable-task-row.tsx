@@ -268,31 +268,30 @@ export function ExpandableTaskRow({ task, subtasks, expanded, onToggleExpand, on
             </div>
           )}
 
-          {/* Text edit */}
-          <div className={isLocked ? "opacity-40 pointer-events-none" : ""}>
-            {editing ? (
-              <input
-                type="text"
-                value={editText}
-                onChange={(e) => setEditText(e.target.value)}
-                onBlur={handleSaveText}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSaveText();
-                  if (e.key === "Escape") { setEditText(task.text); setEditing(false); }
-                }}
-                autoFocus
-                disabled={saving}
-                className="w-full text-[13px] text-[var(--text)] bg-[var(--bg)] border border-[var(--accent)] rounded-[6px] px-3 py-2 focus:outline-none"
-              />
-            ) : (
-              <p
-                className="text-[13px] text-[var(--text)] cursor-text hover:bg-[var(--card2)] rounded px-1 py-0.5 -mx-1 transition-colors"
-                onDoubleClick={() => { setEditText(task.text); setEditing(true); }}
-              >
-                {task.text}
-              </p>
-            )}
-          </div>
+          {/* Text edit (only show input when editing — collapsed header already shows text) */}
+          {!isLocked && editing && (
+            <input
+              type="text"
+              value={editText}
+              onChange={(e) => setEditText(e.target.value)}
+              onBlur={handleSaveText}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleSaveText();
+                if (e.key === "Escape") { setEditText(task.text); setEditing(false); }
+              }}
+              autoFocus
+              disabled={saving}
+              className="w-full text-[13px] text-[var(--text)] bg-[var(--bg)] border border-[var(--accent)] rounded-[6px] px-3 py-2 focus:outline-none"
+            />
+          )}
+          {!isLocked && !editing && (
+            <button
+              onClick={() => { setEditText(task.text); setEditing(true); }}
+              className="text-[11px] text-[var(--text3)] hover:text-[var(--accent)]"
+            >
+              Edit text
+            </button>
+          )}
 
           {/* Priority + Bucket controls */}
           <div className={`flex items-center gap-4 ${isLocked ? "opacity-40 pointer-events-none" : ""}`}>
@@ -329,11 +328,11 @@ export function ExpandableTaskRow({ task, subtasks, expanded, onToggleExpand, on
             </div>
           </div>
 
-          {/* Task code + Mission / Meta */}
+          {/* Mission / Meta (task_code already shown in header) */}
           <MissionField
             mission={task.mission}
             version={task.version}
-            taskCode={task.task_code}
+            taskCode={null}
             locked={isLocked}
             onSave={async (m) => { await onUpdate(task.id, { mission: m }); }}
           />
