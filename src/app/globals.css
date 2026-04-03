@@ -1,0 +1,62 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #0a0a0a;
+  --surface: #141414;
+  --card: #1c1c1e;
+  --card2: #252528;
+  --border: #2c2c2e;
+  --border2: #3a3a3c;
+  --text: #f5f5f7;
+  --text2: #8e8e93;
+  --text3: #636366;
+  --accent: #0a84ff;
+  --accent-dim: rgba(10,132,255,.12);
+  --green: #30d158;
+  --green-dim: rgba(48,209,88,.12);
+  --yellow: #ffd60a;
+  --yellow-dim: rgba(255,214,10,.12);
+  --red: #ff453a;
+  --red-dim: rgba(255,69,58,.12);
+  --orange: #ff9f0a;
+  --orange-dim: rgba(255,159,10,.12);
+  --purple: #bf5af2;
+  --purple-dim: rgba(191,90,242,.12);
+  --cyan: #64d2ff;
+  --cyan-dim: rgba(100,210,255,.12);
+  --r: 12px;
+  --r-sm: 8px;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-card: var(--card);
+  --color-card2: var(--card2);
+  --color-border: var(--border);
+  --color-border2: var(--border2);
+  --color-text: var(--text);
+  --color-text2: var(--text2);
+  --color-text3: var(--text3);
+  --color-accent: var(--accent);
+  --color-accent-dim: var(--accent-dim);
+  --color-green: var(--green);
+  --color-green-dim: var(--green-dim);
+  --color-yellow: var(--yellow);
+  --color-yellow-dim: var(--yellow-dim);
+  --color-red: var(--red);
+  --color-red-dim: var(--red-dim);
+  --color-orange: var(--orange);
+  --color-orange-dim: var(--orange-dim);
+  --color-purple: var(--purple);
+  --color-purple-dim: var(--purple-dim);
+  --color-cyan: var(--cyan);
+  --color-cyan-dim: var(--cyan-dim);
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, 'SF Pro Display', system-ui, sans-serif;
+}
