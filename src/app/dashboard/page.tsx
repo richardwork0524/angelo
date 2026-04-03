@@ -53,6 +53,14 @@ interface Session {
   summary: string | null;
 }
 
+interface HookLog {
+  hook_name: string;
+  action: string;
+  project_key: string | null;
+  detail: string | null;
+  created_at: string;
+}
+
 interface Mission {
   mission: string;
   task_count: number;
@@ -65,6 +73,7 @@ interface Data {
   cards: Card[];
   tasks_by_priority: { P0: Task[]; P1: Task[]; P2: Task[]; ALL: Task[] };
   missions: Mission[];
+  hook_logs: HookLog[];
   sessions: Session[];
   session_total: number;
 }
@@ -412,6 +421,35 @@ function DashboardContent() {
 
         {/* KPI pills */}
         {data && <KpiRow stats={data.stats} activeFilter={kpiFilter} onFilter={setKpiFilter} />}
+
+        {/* Hook activity ticker */}
+        {data && data.hook_logs.length > 0 && (
+          <div className="flex items-center gap-3 px-6 py-1.5 overflow-x-auto">
+            {data.hook_logs.map((log, i) => {
+              const HOOK_COLORS: Record<string, string> = {
+                "task-sync": "#30d158",
+                "skill-sync": "#bf5af2",
+                "auto-eos": "#ff9f0a",
+              };
+              const ago = (() => {
+                const mins = Math.floor((Date.now() - new Date(log.created_at).getTime()) / 60000);
+                if (mins < 1) return "now";
+                if (mins < 60) return `${mins}m`;
+                const hrs = Math.floor(mins / 60);
+                if (hrs < 24) return `${hrs}h`;
+                return `${Math.floor(hrs / 24)}d`;
+              })();
+              return (
+                <div key={i} className="flex items-center gap-1.5 shrink-0">
+                  <span className="w-[6px] h-[6px] rounded-full" style={{ backgroundColor: HOOK_COLORS[log.hook_name] || "#636366" }} />
+                  <span className="text-[10px] text-[var(--text3)] font-medium">{log.hook_name}</span>
+                  <span className="text-[10px] text-[var(--text3)] opacity-60 max-w-[140px] truncate">{log.detail}</span>
+                  <span className="text-[10px] text-[var(--text3)] opacity-40">{ago}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Root tabs */}
         <div className="flex items-center gap-1 px-6 pb-3 border-b border-[var(--border)]">

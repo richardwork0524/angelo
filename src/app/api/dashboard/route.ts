@@ -121,7 +121,14 @@ export async function GET(request: NextRequest) {
     }
     const missions = Array.from(missionMap.values()).sort((a, b) => b.latest_at.localeCompare(a.latest_at));
 
-    // 8. Global stats
+    // 8. Recent hook actions (last 3)
+    const { data: hookLogs } = await supabase
+      .from("angelo_hook_logs")
+      .select("hook_name, action, project_key, detail, created_at")
+      .order("created_at", { ascending: false })
+      .limit(3);
+
+    // 9. Global stats
     const totalOpen = (tasks || []).length;
     const p0Total = tasksByPriority.P0?.length || 0;
     const p1Total = tasksByPriority.P1?.length || 0;
@@ -140,6 +147,7 @@ export async function GET(request: NextRequest) {
         ALL: tasks || [],
       },
       missions,
+      hook_logs: hookLogs || [],
       sessions: sessions || [],
       session_total: sessionCount || 0,
     });
