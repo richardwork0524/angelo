@@ -25,21 +25,30 @@ export async function GET(request: NextRequest) {
     }
     const leafKeys = getDescendantLeaves(parentKey);
 
-    // 3. All open tasks for these leaves (with priority)
-    const { data: tasks } = await supabase
-      .from("angelo_tasks")
-      .select("id, text, project_key, bucket, priority, surface, is_owner_action, task_type, mission, root, version, updated_at, progress, log, parent_task_id, completed, task_code")
-      .in("project_key", leafKeys)
-      .eq("completed", false)
-      .order("updated_at", { ascending: false });
-
-    // 4. Sessions (recent N + total count)
-    const { data: sessions, count: sessionCount } = await supabase
-      .from("angelo_session_logs")
-      .select("id, project_key, session_date, title, surface, summary", { count: "exact" })
-      .in("project_key", leafKeys)
-      .order("created_at", { ascending: false })
-      .limit(limit);
+    // 3-4. Parallel: tasks + sessions + hook logs
+    const [tasksResult, sessionsResult, hookLogsResult] = await Promise.all([
+      supabase
+        .from("angelo_tasks")
+        .select("id, text, project_key, bucket, priority, surface, is_owner_action, task_type, mission, root, version, updated_at, progress, log, parent_task_id, completed, task_code")
+        .in("project_key", leafKeys)
+        .eq("completed", false)
+        .order("updated_at", { ascending: false }),
+      supabase
+        .from("angelo_session_logs")
+        .select("id, project_key, session_date, title, surface, summary", { count: "exact" })
+        .in("project_key", leafKeys)
+        .order("created_at", { ascending: false })
+        .limit(limit),
+      supabase
+        .from("angelo_hook_logs")
+        .select("hook_name, action, project_key, detail, created_at")
+        .order("created_at", { ascending: false })
+        .limit(3),
+    ]);
+    const tasks = tasksResult.data;
+    const sessions = sessionsResult.data;
+    const sessionCount = sessionsResult.count;
+    const hookLogs = hookLogsResult.data;
 
     // 5. Task counts per project + priority grouping
     const tasksByProject = new Map<string, typeof tasks>();
@@ -147,14 +156,7 @@ export async function GET(request: NextRequest) {
     }
     const missions = Array.from(missionMap.values()).sort((a, b) => b.latest_at.localeCompare(a.latest_at));
 
-    // 8. Recent hook actions (last 3)
-    const { data: hookLogs } = await supabase
-      .from("angelo_hook_logs")
-      .select("hook_name, action, project_key, detail, created_at")
-      .order("created_at", { ascending: false })
-      .limit(3);
-
-    // 9. Global stats
+    // 8. Global stats (hook_logs already fetched in parallel above)
     const totalOpen = (tasks || []).length;
     const p0Total = tasksByPriority.P0?.length || 0;
     const p1Total = tasksByPriority.P1?.length || 0;

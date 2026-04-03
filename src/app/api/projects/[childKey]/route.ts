@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 interface TaskRow {
   id: string;
   text: string;
+  description: string | null;
   completed: boolean;
   bucket: string;
   priority: string | null;
@@ -11,16 +12,33 @@ interface TaskRow {
   parent_task_id: string | null;
   sort_order: number | null;
   created_at: string;
+  task_code: string | null;
+  mission: string | null;
+  version: string | null;
+  surface: string | null;
+  progress: string | null;
+  log: unknown[] | null;
+  updated_at: string;
+  project_key: string;
 }
 
 interface NestedTask {
   id: string;
   text: string;
+  description: string | null;
   completed: boolean;
   bucket: string;
   priority: string | null;
   is_owner_action: boolean;
   parent_task_id: string | null;
+  task_code: string | null;
+  mission: string | null;
+  version: string | null;
+  surface: string | null;
+  progress: string | null;
+  log: unknown[] | null;
+  updated_at: string;
+  project_key: string;
   sub_tasks: NestedTask[];
 }
 
@@ -33,11 +51,20 @@ function nestTasks(tasks: TaskRow[]): NestedTask[] {
     taskMap.set(t.id, {
       id: t.id,
       text: t.text,
+      description: t.description || null,
       completed: t.completed,
       bucket: t.bucket,
       priority: t.priority || null,
       is_owner_action: t.is_owner_action || false,
       parent_task_id: t.parent_task_id || null,
+      task_code: t.task_code || null,
+      mission: t.mission || null,
+      version: t.version || null,
+      surface: t.surface || null,
+      progress: t.progress || null,
+      log: t.log || null,
+      updated_at: t.updated_at,
+      project_key: t.project_key,
       sub_tasks: [],
     });
   }

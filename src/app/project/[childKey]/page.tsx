@@ -10,15 +10,25 @@ import { EmptyState } from "@/components/empty-state";
 import { Toast } from "@/components/toast";
 import { ProjectCard } from "@/components/project-card";
 import { SessionLogList } from "@/components/session-log-list";
+import { TaskDetailModal, type ModalTask } from "@/components/task-detail-modal";
 
 interface NestedTask {
   id: string;
   text: string;
+  description: string | null;
   completed: boolean;
   bucket: string;
   priority: string | null;
   is_owner_action: boolean;
   parent_task_id: string | null;
+  task_code: string | null;
+  mission: string | null;
+  version: string | null;
+  surface: string | null;
+  progress: string | null;
+  log: { timestamp: string; type: string; message: string }[] | null;
+  updated_at: string;
+  project_key: string;
   sub_tasks: NestedTask[];
 }
 
@@ -58,6 +68,7 @@ export default function ProjectDetailPage() {
   const [toast, setToast] = useState<string | null>(null);
   const [showCompleted, setShowCompleted] = useState(false);
   const [moveSheet, setMoveSheet] = useState<{ taskId: string; currentBucket: string } | null>(null);
+  const [selectedTask, setSelectedTask] = useState<NestedTask | null>(null);
 
   const fetchProject = useCallback(async () => {
     try {
@@ -122,6 +133,33 @@ export default function ProjectDetailPage() {
       await fetchProject();
     } catch {
       setToast("Failed to move task. Try again.");
+    }
+  }
+
+  async function handleModalUpdate(taskId: string, fields: Record<string, unknown>) {
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(fields),
+      });
+      if (!res.ok) throw new Error("Failed");
+      setToast("Updated");
+      await fetchProject();
+    } catch {
+      setToast("Failed to update");
+    }
+  }
+
+  async function handleModalDelete(taskId: string) {
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed");
+      setToast("Task deleted");
+      setSelectedTask(null);
+      await fetchProject();
+    } catch {
+      setToast("Failed to delete");
     }
   }
 
@@ -222,6 +260,7 @@ export default function ProjectDetailPage() {
                   onToggle={handleToggleTask}
                   onLongPress={(id) => setMoveSheet({ taskId: id, currentBucket: "THIS_WEEK" })}
                   onUpdateText={handleUpdateText}
+                  onOpen={(task) => setSelectedTask(task)}
                 />
                 <BucketSection
                   title="THIS MONTH"
@@ -231,6 +270,7 @@ export default function ProjectDetailPage() {
                   onToggle={handleToggleTask}
                   onLongPress={(id) => setMoveSheet({ taskId: id, currentBucket: "THIS_MONTH" })}
                   onUpdateText={handleUpdateText}
+                  onOpen={(task) => setSelectedTask(task)}
                 />
                 <BucketSection
                   title="PARKED"
@@ -240,6 +280,7 @@ export default function ProjectDetailPage() {
                   onToggle={handleToggleTask}
                   onLongPress={(id) => setMoveSheet({ taskId: id, currentBucket: "PARKED" })}
                   onUpdateText={handleUpdateText}
+                  onOpen={(task) => setSelectedTask(task)}
                 />
 
                 {project.tasks.completed.length > 0 && (
@@ -279,6 +320,15 @@ export default function ProjectDetailPage() {
         />
       )}
 
+      {selectedTask && (
+        <TaskDetailModal
+          task={selectedTask as unknown as ModalTask}
+          onClose={() => { setSelectedTask(null); fetchProject(); }}
+          onUpdate={handleModalUpdate}
+          onDelete={handleModalDelete}
+        />
+      )}
+
       {toast && <Toast message={toast} onDismiss={() => setToast(null)} persistent />}
     </div>
   );
@@ -294,6 +344,7 @@ function BucketSection({
   onToggle,
   onLongPress,
   onUpdateText,
+  onOpen,
 }: {
   title: string;
   tasks: NestedTask[];
@@ -302,6 +353,7 @@ function BucketSection({
   onToggle: (id: string, completed: boolean) => void;
   onLongPress: (id: string) => void;
   onUpdateText: (id: string, text: string) => void;
+  onOpen: (task: NestedTask) => void;
 }) {
   if (tasks.length === 0) return null;
 
@@ -334,6 +386,7 @@ function BucketSection({
             onToggle={onToggle}
             onLongPress={() => onLongPress(task.id)}
             onUpdateText={onUpdateText}
+            onOpen={() => onOpen(task)}
           />
         ))}
       </div>
@@ -356,12 +409,14 @@ function TaskRow({
   onToggle,
   onLongPress,
   onUpdateText,
+  onOpen,
   depth = 0,
 }: {
   task: NestedTask;
   onToggle: (id: string, completed: boolean) => void;
   onLongPress?: () => void;
   onUpdateText: (id: string, text: string) => void;
+  onOpen?: () => void;
   depth?: number;
 }) {
   const [editing, setEditing] = useState(false);
@@ -444,10 +499,11 @@ function TaskRow({
           />
         ) : (
           <span
-            className={`flex-1 text-[14px] leading-snug cursor-text ${
+            className={`flex-1 text-[14px] leading-snug cursor-pointer ${
               task.completed ? "text-[var(--text3)] line-through" : "text-[var(--text)]"
             }`}
-            onDoubleClick={() => { if (!task.completed) { setEditText(task.text); setEditing(true); } }}
+            onClick={() => onOpen?.()}
+            onDoubleClick={(e) => { e.stopPropagation(); if (!task.completed) { setEditText(task.text); setEditing(true); } }}
           >
             {task.text}
           </span>

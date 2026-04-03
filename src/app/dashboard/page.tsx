@@ -282,7 +282,8 @@ function DashboardContent() {
   const [modalTask, setModalTask] = useState<TaskPreview | null>(null);
 
   const fetchDashboard = useCallback(async (tab: string) => {
-    setLoading(true);
+    // Only show skeleton on first load — keep existing data visible during tab switches
+    if (!data) setLoading(true);
     try {
       const res = await fetch(`/api/dashboard?parent=${tab}`);
       const d = await res.json();
@@ -292,7 +293,7 @@ function DashboardContent() {
       setData(null);
     }
     setLoading(false);
-  }, []);
+  }, [data]);
 
   useEffect(() => { fetchDashboard(activeRoot); }, [activeRoot, fetchDashboard]);
 
