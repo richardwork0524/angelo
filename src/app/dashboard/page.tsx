@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Fab } from "@/components/fab";
 import { QuickCaptureSheet } from "@/components/quick-capture-sheet";
 import { Toast } from "@/components/toast";
-import { ExpandableTaskRow, type DashboardTask } from "@/components/expandable-task-row";
+import { type DashboardTask } from "@/components/expandable-task-row";
 import { TaskDetailModal, type ModalTask } from "@/components/task-detail-modal";
 
 /* ── Types ── */
@@ -279,7 +279,7 @@ function DashboardContent() {
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [kpiFilter, setKpiFilter] = useState<KpiFilter>(null);
   const [expandedMission, setExpandedMission] = useState<string | null>(null);
-  const [modalTask, setModalTask] = useState<TaskPreview | null>(null);
+  const [modalTask, setModalTask] = useState<{ task: ModalTask; subtasks: ModalTask[] } | null>(null);
 
   const fetchDashboard = useCallback(async (tab: string) => {
     // Only show skeleton on first load — keep existing data visible during tab switches
@@ -664,7 +664,7 @@ function DashboardContent() {
                           setSelectedCard(card.child_key);
                         }
                       }}
-                      onTaskClick={(t) => setModalTask(t)}
+                      onTaskClick={(t) => setModalTask({ task: { ...t, description: null, version: null, completed: false, log: null } as ModalTask, subtasks: [] })}
                     />
                   ))}
                 </div>
@@ -715,20 +715,58 @@ function DashboardContent() {
                   <p className="text-[14px] text-[var(--text3)]">No tasks</p>
                 </div>
               ) : (
-                <div className="space-y-2">
-                  {mainTasks.map((t) => (
-                    <ExpandableTaskRow
-                      key={t.id}
-                      task={t as DashboardTask}
-                      subtasks={subtaskMap.get(t.id) || []}
-                      expanded={expandedTaskId === t.id}
-                      onToggleExpand={() => setExpandedTaskId(expandedTaskId === t.id ? null : t.id)}
-                      onUpdate={handleTaskUpdate}
-                      onComplete={handleTaskComplete}
-                      onSectionComplete={handleSectionComplete}
-                      onAddSubtask={handleAddSubtask}
-                    />
-                  ))}
+                <div className="space-y-1">
+                  {mainTasks.map((t) => {
+                    const subs = subtaskMap.get(t.id) || [];
+                    const progress = t.progress?.match(/^(\d+)\/(\d+)$/);
+                    return (
+                      <button
+                        key={t.id}
+                        onClick={() => setModalTask({
+                          task: t as unknown as ModalTask,
+                          subtasks: subs as unknown as ModalTask[],
+                        })}
+                        className="w-full flex items-start gap-2.5 px-3 py-2.5 rounded-[8px] bg-[var(--card)] border border-[var(--border)] hover:border-[var(--border2)] transition-all text-left"
+                      >
+                        <span
+                          className="w-[7px] h-[7px] rounded-full shrink-0 mt-[5px]"
+                          style={{ backgroundColor: PRIORITY_DOT[t.priority || ""] || "var(--border2)" }}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[13px] leading-[1.3] text-[var(--text)]">
+                            {t.task_code && <span className="text-[var(--accent)] font-mono text-[10px] mr-1">{t.task_code}</span>}
+                            {t.text}
+                          </p>
+                          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                            <span className="text-[10px] text-[var(--text3)]">{t.project_key}</span>
+                            {t.mission && <span className="text-[10px] text-[var(--purple)] truncate max-w-[120px]">{t.mission}</span>}
+                            {t.surface && (
+                              <span className="inline-flex items-center gap-0.5">
+                                <span className="w-[4px] h-[4px] rounded-full" style={{ backgroundColor: SURFACE_DOT[t.surface] }} />
+                                <span className="text-[10px] text-[var(--text3)] uppercase">{t.surface}</span>
+                              </span>
+                            )}
+                            {t.bucket !== "THIS_WEEK" && (
+                              <span className="text-[10px] text-[var(--text3)] px-1 py-[0.5px] rounded bg-[var(--card2)]">
+                                {t.bucket === "THIS_MONTH" ? "Month" : t.bucket === "PARKED" ? "Parked" : t.bucket}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {progress && (
+                            <span className="text-[10px] font-bold text-[var(--accent)] tabular-nums">{t.progress}</span>
+                          )}
+                          {t.is_owner_action && (
+                            <span className="text-[10px] font-bold text-[var(--cyan)]">YOU</span>
+                          )}
+                          {subs.length > 0 && (
+                            <span className="text-[10px] text-[var(--text3)] tabular-nums">{subs.filter((s) => s.completed).length}/{subs.length}</span>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -739,10 +777,25 @@ function DashboardContent() {
       {/* Task detail modal (from card/mission clicks) */}
       {modalTask && (
         <TaskDetailModal
-          task={{ ...modalTask, description: null, version: null, is_owner_action: modalTask.is_owner_action ?? false, completed: false, log: null } as ModalTask}
+          task={modalTask.task}
+          subtasks={modalTask.subtasks}
           onClose={() => { setModalTask(null); fetchDashboard(activeRoot); }}
           onUpdate={handleModalUpdate}
           onDelete={handleModalDelete}
+          onAddSubtask={async (parentId, text) => {
+            try {
+              const parentTask = data?.tasks_by_priority.ALL.find((t) => t.id === parentId);
+              if (!parentTask) return;
+              const res = await fetch(`/api/projects/${parentTask.project_key}/tasks`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ text, bucket: parentTask.bucket, parent_task_id: parentId }),
+              });
+              if (!res.ok) throw new Error("Failed");
+              setToast("Subtask added");
+              await fetchDashboard(activeRoot);
+            } catch { setToast("Failed to add subtask"); }
+          }}
         />
       )}
 

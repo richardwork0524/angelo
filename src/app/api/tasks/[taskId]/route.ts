@@ -61,6 +61,18 @@ export async function PATCH(
     update.mission = typeof body.mission === "string" ? body.mission.trim() || null : null;
   }
 
+  if (body.progress !== undefined) {
+    if (body.progress === null) {
+      update.progress = null;
+    } else {
+      const match = String(body.progress).match(/^(\d+)\/(\d+)$/);
+      if (!match || parseInt(match[1]) > parseInt(match[2])) {
+        return NextResponse.json({ error: "Progress must be N/M format" }, { status: 400 });
+      }
+      update.progress = body.progress;
+    }
+  }
+
   if (Object.keys(update).length === 0) {
     return NextResponse.json({ error: "No valid fields" }, { status: 400 });
   }
