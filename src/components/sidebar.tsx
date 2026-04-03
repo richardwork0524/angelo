@@ -160,8 +160,7 @@ export function Sidebar() {
     <aside className="w-[280px] shrink-0 h-screen sticky top-0 bg-[var(--surface)] border-r border-[var(--border)] flex flex-col overflow-hidden">
       {/* Header */}
       <div className="px-5 py-5">
-        <h1 className="text-[18px] font-bold text-[var(--text)]">Angelo</h1>
-        <p className="text-[12px] text-[var(--text3)] mt-0.5">Rinoa-OS Companion</p>
+        <p className="text-[13px] font-semibold text-[var(--text2)] tracking-wide uppercase">Rinoa-OS</p>
       </div>
 
       {/* Navigation links */}
