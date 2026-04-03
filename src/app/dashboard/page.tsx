@@ -106,7 +106,7 @@ function KpiRow({ stats }: { stats: Data["stats"] }) {
           <span className="text-[20px] font-bold tabular-nums" style={{ color: item.color }}>
             {item.value}
           </span>
-          <span className="text-[10px] text-[var(--text3)] uppercase tracking-wide mt-0.5">
+          <span className="text-[11px] text-[var(--text3)] uppercase tracking-wide mt-0.5">
             {item.label}
           </span>
         </div>
@@ -196,21 +196,21 @@ function TaskRow({ t }: { t: Task }) {
           {t.surface && (
             <span className="inline-flex items-center gap-1">
               <span className="w-[5px] h-[5px] rounded-full" style={{ backgroundColor: SURFACE_DOT[t.surface] || "var(--text3)" }} />
-              <span className="text-[10px] text-[var(--text3)] uppercase">{t.surface}</span>
+              <span className="text-[11px] text-[var(--text3)] uppercase">{t.surface}</span>
             </span>
           )}
           {t.bucket !== "THIS_WEEK" && (
-            <span className="text-[10px] text-[var(--text3)] px-1.5 py-[1px] rounded bg-[var(--card2)]">
+            <span className="text-[11px] text-[var(--text3)] px-1.5 py-[1px] rounded bg-[var(--card2)]">
               {t.bucket === "THIS_MONTH" ? "Month" : t.bucket === "PARKED" ? "Parked" : t.bucket}
             </span>
           )}
           {t.mission && (
-            <span className="text-[10px] text-[var(--purple)] truncate max-w-[100px]">{t.mission}</span>
+            <span className="text-[11px] text-[var(--purple)] truncate max-w-[100px]">{t.mission}</span>
           )}
         </div>
       </div>
       {t.is_owner_action && (
-        <span className="text-[9px] font-bold text-[var(--cyan)] bg-[var(--cyan-dim)] px-1.5 py-[2px] rounded shrink-0">YOU</span>
+        <span className="text-[11px] font-bold text-[var(--cyan)] bg-[var(--cyan-dim)] px-1.5 py-[2px] rounded shrink-0">YOU</span>
       )}
     </div>
   );
