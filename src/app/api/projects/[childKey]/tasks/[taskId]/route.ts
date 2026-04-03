@@ -56,6 +56,49 @@ export async function PATCH(
     update.is_owner_action = body.is_owner_action;
   }
 
+  // Handle progress (format: "N/M" where N <= M)
+  if (body.progress !== undefined) {
+    if (body.progress === null) {
+      update.progress = null;
+    } else {
+      const match = String(body.progress).match(/^(\d+)\/(\d+)$/);
+      if (!match || parseInt(match[1]) > parseInt(match[2])) {
+        return NextResponse.json(
+          { error: { code: "400", type: "validation_error", message: "Progress must be in N/M format where N <= M" } },
+          { status: 400 }
+        );
+      }
+      update.progress = body.progress;
+    }
+  }
+
+  // Handle bucket move (inline, no separate endpoint needed)
+  if (body.bucket !== undefined) {
+    const validBuckets = ["THIS_WEEK", "THIS_MONTH", "PARKED"];
+    if (!validBuckets.includes(body.bucket)) {
+      return NextResponse.json(
+        { error: { code: "400", type: "validation_error", message: "Invalid bucket" } },
+        { status: 400 }
+      );
+    }
+    update.bucket = body.bucket;
+  }
+
+  // Handle log_entry (append-only)
+  if (body.log_entry) {
+    const { type: entryType, message: entryMsg, section } = body.log_entry;
+    if (!entryType || !entryMsg) {
+      return NextResponse.json(
+        { error: { code: "400", type: "validation_error", message: "log_entry requires type and message" } },
+        { status: 400 }
+      );
+    }
+    // Read current log to append
+    const { data: current } = await supabase.from("angelo_tasks").select("log").eq("id", taskId).single();
+    const existingLog = Array.isArray(current?.log) ? current.log : [];
+    update.log = [...existingLog, { timestamp: new Date().toISOString(), type: entryType, message: entryMsg, ...(section !== undefined ? { section } : {}) }];
+  }
+
   if (Object.keys(update).length === 0) {
     return NextResponse.json(
       { error: { code: "400", type: "validation_error", message: "No valid fields to update" } },

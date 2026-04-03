@@ -17,6 +17,13 @@ export interface Project {
   updated_at: string | null;
 }
 
+export interface LogEntry {
+  timestamp: string;
+  type: "completion" | "section_complete" | "note" | "created" | "tagged" | "updated";
+  message: string;
+  section?: number;
+}
+
 export interface Task {
   id: string;
   project_key: string;
@@ -35,6 +42,10 @@ export interface Task {
   next_step: string | null;
   context_pointer: string | null;
   build_phase: string | null;
+  mission: string | null;
+  root: string | null;
+  version: string | null;
+  log: LogEntry[] | null;
   created_at: string;
   updated_at: string;
 }

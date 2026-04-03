@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Fab } from "@/components/fab";
 import { QuickCaptureSheet } from "@/components/quick-capture-sheet";
 import { Toast } from "@/components/toast";
+import { ExpandableTaskRow, type DashboardTask } from "@/components/expandable-task-row";
 
 /* ── Types ── */
 
@@ -35,6 +36,10 @@ interface Task {
   is_owner_action: boolean;
   mission: string | null;
   updated_at: string;
+  progress: string | null;
+  log: { timestamp: string; type: string; message: string; section?: number }[] | null;
+  parent_task_id: string | null;
+  completed: boolean;
 }
 
 interface Session {
@@ -70,8 +75,8 @@ const URGENCY_TABS = [
   { key: "P2", label: "Normal", color: "#ffd60a" },
 ];
 
-const SURFACE_DOT: Record<string, string> = { CODE: "#0a84ff", CHAT: "#30d158", COWORK: "#bf5af2" };
 const PRIORITY_DOT: Record<string, string> = { P0: "#ff453a", P1: "#ff9f0a", P2: "#ffd60a" };
+const SURFACE_DOT: Record<string, string> = { CODE: "#0a84ff", CHAT: "#30d158", COWORK: "#bf5af2" };
 
 /* ── Skeleton ── */
 
@@ -180,41 +185,7 @@ function SessionRow({ s }: { s: Session }) {
   );
 }
 
-/* ── Task Row ── */
-
-function TaskRow({ t }: { t: Task }) {
-  return (
-    <div className="flex items-start gap-3 px-4 py-3 rounded-[8px] bg-[var(--card)] border border-[var(--border)] hover:border-[var(--border2)] transition-colors">
-      <span
-        className="w-[8px] h-[8px] rounded-full shrink-0 mt-[5px]"
-        style={{ backgroundColor: PRIORITY_DOT[t.priority || ""] || "var(--border2)" }}
-      />
-      <div className="flex-1 min-w-0">
-        <p className="text-[13px] text-[var(--text)] leading-[1.4]">{t.text}</p>
-        <div className="flex items-center gap-2 mt-1">
-          <span className="text-[11px] text-[var(--text3)]">{t.project_key}</span>
-          {t.surface && (
-            <span className="inline-flex items-center gap-1">
-              <span className="w-[5px] h-[5px] rounded-full" style={{ backgroundColor: SURFACE_DOT[t.surface] || "var(--text3)" }} />
-              <span className="text-[11px] text-[var(--text3)] uppercase">{t.surface}</span>
-            </span>
-          )}
-          {t.bucket !== "THIS_WEEK" && (
-            <span className="text-[11px] text-[var(--text3)] px-1.5 py-[1px] rounded bg-[var(--card2)]">
-              {t.bucket === "THIS_MONTH" ? "Month" : t.bucket === "PARKED" ? "Parked" : t.bucket}
-            </span>
-          )}
-          {t.mission && (
-            <span className="text-[11px] text-[var(--purple)] truncate max-w-[100px]">{t.mission}</span>
-          )}
-        </div>
-      </div>
-      {t.is_owner_action && (
-        <span className="text-[11px] font-bold text-[var(--cyan)] bg-[var(--cyan-dim)] px-1.5 py-[2px] rounded shrink-0">YOU</span>
-      )}
-    </div>
-  );
-}
+/* ── (TaskRow removed — replaced by ExpandableTaskRow component) ── */
 
 /* ── Main ── */
 
@@ -239,6 +210,7 @@ function DashboardContent() {
   const [selectedCard, setSelectedCard] = useState<string | null>(null);
   const [captureOpen, setCaptureOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
 
   const fetchDashboard = useCallback(async (tab: string) => {
     setLoading(true);
@@ -292,8 +264,115 @@ function DashboardContent() {
     return data.cards.map((c) => ({ child_key: c.child_key, display_name: c.display_name }));
   }, [data]);
 
-  // View mode: "cards" (grid overview) or "tasks" (filtered task list)
-  const viewMode = selectedCard ? "tasks" : "cards";
+  // Group subtasks by parent_task_id
+  const subtaskMap = useMemo(() => {
+    const map = new Map<string, DashboardTask[]>();
+    if (!data) return map;
+    for (const t of data.tasks_by_priority.ALL) {
+      if (t.parent_task_id) {
+        if (!map.has(t.parent_task_id)) map.set(t.parent_task_id, []);
+        map.get(t.parent_task_id)!.push(t as DashboardTask);
+      }
+    }
+    return map;
+  }, [data]);
+
+  // Filter out subtasks from main list (they render inside parents)
+  const mainTasks = useMemo(() => {
+    return filteredTasks.filter((t) => !t.parent_task_id);
+  }, [filteredTasks]);
+
+  // ── Handlers ──
+
+  async function handleTaskUpdate(taskId: string, fields: Record<string, unknown>) {
+    const task = data?.tasks_by_priority.ALL.find((t) => t.id === taskId);
+    if (!task) return;
+    try {
+      const res = await fetch(`/api/projects/${task.project_key}/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(fields),
+      });
+      if (!res.ok) throw new Error("Failed");
+      await fetchDashboard(activeRoot);
+    } catch {
+      setToast("Failed to update task");
+    }
+  }
+
+  async function handleTaskComplete(taskId: string, logMessage: string) {
+    const task = data?.tasks_by_priority.ALL.find((t) => t.id === taskId);
+    if (!task) return;
+    try {
+      const res = await fetch(`/api/projects/${task.project_key}/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: "completed",
+          log_entry: { type: "completion", message: logMessage },
+        }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      setExpandedTaskId(null);
+      setToast("Task completed");
+      await fetchDashboard(activeRoot);
+    } catch {
+      setToast("Failed to complete task");
+    }
+  }
+
+  async function handleSectionComplete(taskId: string, currentProgress: string) {
+    const match = currentProgress.match(/^(\d+)\/(\d+)$/);
+    if (!match) return;
+    const done = parseInt(match[1]) + 1;
+    const total = parseInt(match[2]);
+    const newProgress = `${done}/${total}`;
+    const task = data?.tasks_by_priority.ALL.find((t) => t.id === taskId);
+    if (!task) return;
+    try {
+      const payload: Record<string, unknown> = {
+        progress: newProgress,
+        log_entry: { type: "section_complete", message: `Completed section ${done}/${total}`, section: done },
+      };
+      // Auto-complete if all sections done
+      if (done >= total) {
+        payload.status = "completed";
+        payload.log_entry = { type: "completion", message: `All ${total} sections completed` };
+      }
+      const res = await fetch(`/api/projects/${task.project_key}/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error("Failed");
+      if (done >= total) {
+        setExpandedTaskId(null);
+        setToast("Task completed (all sections done)");
+      } else {
+        setToast(`Section ${done}/${total} completed`);
+      }
+      await fetchDashboard(activeRoot);
+    } catch {
+      setToast("Failed to update progress");
+    }
+  }
+
+  async function handleAddSubtask(parentId: string, text: string) {
+    const parent = data?.tasks_by_priority.ALL.find((t) => t.id === parentId);
+    if (!parent) return;
+    try {
+      const res = await fetch(`/api/projects/${parent.project_key}/tasks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, bucket: parent.bucket, parent_task_id: parentId }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      setToast("Subtask added");
+      await fetchDashboard(activeRoot);
+    } catch {
+      setToast("Failed to add subtask");
+    }
+  }
 
   return (
     <div className="h-full flex flex-col overflow-hidden bg-[var(--bg)]">
@@ -422,7 +501,7 @@ function DashboardContent() {
 
             {/* Task list */}
             <div className="flex-1 overflow-y-auto px-6 py-3">
-              {filteredTasks.length === 0 ? (
+              {mainTasks.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full">
                   <div className="w-12 h-12 rounded-full bg-[var(--card)] flex items-center justify-center mb-3">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" strokeWidth="1.5">
@@ -434,7 +513,19 @@ function DashboardContent() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {filteredTasks.map((t) => <TaskRow key={t.id} t={t} />)}
+                  {mainTasks.map((t) => (
+                    <ExpandableTaskRow
+                      key={t.id}
+                      task={t as DashboardTask}
+                      subtasks={subtaskMap.get(t.id) || []}
+                      expanded={expandedTaskId === t.id}
+                      onToggleExpand={() => setExpandedTaskId(expandedTaskId === t.id ? null : t.id)}
+                      onUpdate={handleTaskUpdate}
+                      onComplete={handleTaskComplete}
+                      onSectionComplete={handleSectionComplete}
+                      onAddSubtask={handleAddSubtask}
+                    />
+                  ))}
                 </div>
               )}
             </div>
