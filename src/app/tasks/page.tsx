@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, } from 'react';
 import dynamic from 'next/dynamic';
 import { StickyHeader } from '@/components/sticky-header';
 import { useToast } from '@/components/toast';
@@ -45,9 +45,27 @@ export default function TasksPage() {
 
   const fetchTasks = useCallback(async () => {
     try {
-      const res = await fetch('/api/dashboard?parent=general');
-      const d = await res.json();
-      setData(d);
+      // Fetch all roots in parallel to get all tasks across entire portfolio
+      const roots = ['general', 'group-strategy', 'company', 'development'];
+      const results = await Promise.all(
+        roots.map((r) => fetch(`/api/dashboard?parent=${r}`).then((res) => res.json()))
+      );
+      // Merge tasks from all roots
+      const allTasks: Task[] = [];
+      const seen = new Set<string>();
+      for (const d of results) {
+        for (const t of d.tasks_by_priority?.ALL || []) {
+          if (!seen.has(t.id)) { seen.add(t.id); allTasks.push(t); }
+        }
+      }
+      setData({
+        tasks_by_priority: {
+          ALL: allTasks,
+          P0: allTasks.filter((t) => t.priority === 'P0'),
+          P1: allTasks.filter((t) => t.priority === 'P1'),
+          P2: allTasks.filter((t) => t.priority === 'P2'),
+        },
+      });
     } catch { /* ignore */ }
     setLoading(false);
   }, []);
@@ -73,6 +91,15 @@ export default function TasksPage() {
     }
     return map;
   }, [data]);
+
+  // Keep detailTask subtasks synced when data refreshes
+  useEffect(() => {
+    if (!detailTask || !data) return;
+    const freshSubs = subtaskMap.get(detailTask.task.id) || [];
+    if (freshSubs.length !== detailTask.subtasks.length) {
+      setDetailTask((prev) => prev ? { ...prev, subtasks: freshSubs as unknown as DetailTask[] } : prev);
+    }
+  }, [data, subtaskMap, detailTask]);
 
   // Group by bucket
   const byBucket = useMemo(() => ({

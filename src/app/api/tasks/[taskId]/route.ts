@@ -30,6 +30,24 @@ export async function PATCH(
 
   const update: Record<string, unknown> = {};
 
+  // Handle status toggle (completed/open)
+  if (body.status !== undefined) {
+    if (!["open", "completed"].includes(body.status)) {
+      return NextResponse.json({ error: "Invalid status" }, { status: 400 });
+    }
+    update.completed = body.status === "completed";
+  }
+
+  // Handle log_entry (append-only)
+  if (body.log_entry) {
+    const { type: entryType, message: entryMsg, section } = body.log_entry;
+    if (entryType && entryMsg) {
+      const { data: current } = await supabase.from("angelo_tasks").select("log").eq("id", taskId).single();
+      const existingLog = Array.isArray(current?.log) ? current.log : [];
+      update.log = [...existingLog, { timestamp: new Date().toISOString(), type: entryType, message: entryMsg, ...(section !== undefined ? { section } : {}) }];
+    }
+  }
+
   if (body.priority !== undefined) {
     const valid = ["P0", "P1", "P2", null];
     if (!valid.includes(body.priority)) {

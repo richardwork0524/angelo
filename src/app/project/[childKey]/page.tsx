@@ -13,7 +13,10 @@ import { ProjectCard } from "@/components/project-card";
 import { SessionLogList } from "@/components/session-log-list";
 import { type DetailTask } from "@/components/task/task-detail";
 import { Fab } from "@/components/fab";
-import { QuickCaptureSheet } from "@/components/quick-capture-sheet";
+import { cachedFetch, invalidateCache } from "@/lib/cache";
+
+// Lazy-load heavy components
+const QuickCaptureSheet = dynamic(() => import("@/components/quick-capture-sheet").then((m) => ({ default: m.QuickCaptureSheet })), { ssr: false });
 
 const TaskDetail = dynamic(() => import("@/components/task/task-detail").then((m) => ({ default: m.TaskDetail })), { ssr: false });
 
@@ -100,21 +103,51 @@ export default function ProjectDetailPage() {
   const [activeBucket, setActiveBucket] = useState<"THIS_WEEK" | "THIS_MONTH" | "PARKED">("THIS_WEEK");
   const { showToast, ToastContainer } = useToast();
 
-  const fetchProject = useCallback(async () => {
+  const fetchProject = useCallback(async (skipCache = false) => {
     try {
       setError(null);
-      const res = await fetch(`/api/projects/${childKey}`);
-      if (res.status === 404) { setError("Project not found."); return; }
-      if (!res.ok) throw new Error("Failed");
-      setProject(await res.json());
+      const url = `/api/projects/${childKey}`;
+      let proj;
+      if (skipCache) {
+        invalidateCache(url);
+        const res = await fetch(url);
+        if (res.status === 404) { setError("Project not found."); return; }
+        if (!res.ok) throw new Error("Failed");
+        proj = await res.json();
+      } else {
+        proj = await cachedFetch<ProjectDetail>(url, 20000);
+      }
+      setProject(proj);
+      // Auto-select first non-empty bucket if current bucket is empty
+      if (proj.tasks) {
+        const bucketMap: Record<string, string[]> = {
+          THIS_WEEK: proj.tasks.this_week,
+          THIS_MONTH: proj.tasks.this_month,
+          PARKED: proj.tasks.parked,
+        };
+        const currentBucketTasks = bucketMap[activeBucket];
+        if (!currentBucketTasks || currentBucketTasks.length === 0) {
+          if (proj.tasks.this_week.length > 0) setActiveBucket("THIS_WEEK");
+          else if (proj.tasks.this_month.length > 0) setActiveBucket("THIS_MONTH");
+          else if (proj.tasks.parked.length > 0) setActiveBucket("PARKED");
+        }
+      }
     } catch {
       setError("Failed to load tasks. Pull to retry.");
     } finally {
       setLoading(false);
     }
-  }, [childKey]);
+  }, [childKey, activeBucket]);
 
   useEffect(() => { fetchProject(); }, [fetchProject]);
+
+  // Dynamic content update: auto-refresh every 30s when tab is visible
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (!document.hidden) fetchProject(true);
+    }, 30000);
+    return () => clearInterval(timer);
+  }, [fetchProject]);
 
   // Listen for quick-capture event from BottomNav
   useEffect(() => {
@@ -156,11 +189,12 @@ export default function ProjectDetailPage() {
     promise.then((res) => {
       if (!res.ok) throw new Error("Failed");
       showToast(successMsg);
-      // Silent background refresh to sync any server-generated fields
-      fetchProject();
+      // Invalidate cache and refresh from server
+      invalidateCache(`/api/projects/${childKey}`);
+      fetchProject(true);
     }).catch(() => {
       showToast("Sync failed — retrying...", "error");
-      fetchProject(); // Revert to server state
+      fetchProject(true);
     });
   }
 
@@ -544,18 +578,44 @@ export default function ProjectDetailPage() {
       {selectedTask && (
         <TaskDetail
           task={selectedTask as unknown as DetailTask}
+          subtasks={(selectedTask.sub_tasks || []).map((st) => ({
+            id: st.id,
+            text: st.text,
+            description: st.description || null,
+            project_key: st.project_key,
+            bucket: st.bucket,
+            priority: st.priority,
+            surface: st.surface,
+            is_owner_action: st.is_owner_action,
+            mission: st.mission,
+            version: st.version,
+            task_code: st.task_code,
+            progress: st.progress,
+            log: st.log as DetailTask["log"],
+            updated_at: st.updated_at,
+            completed: st.completed,
+          } as DetailTask))}
           onClose={() => { setSelectedTask(null); fetchProject(); }}
           onUpdate={handleModalUpdate}
           onDelete={handleModalDelete}
           onAddSubtask={async (parentId, text) => {
-            bgSync(
-              fetch(`/api/projects/${childKey}/tasks`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ text, bucket: selectedTask.bucket || "THIS_WEEK", parent_task_id: parentId }),
-              }),
-              "Subtask added"
-            );
+            const res = await fetch(`/api/projects/${childKey}/tasks`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ text, bucket: selectedTask.bucket || "THIS_WEEK", parent_task_id: parentId }),
+            });
+            if (!res.ok) { showToast("Failed to add subtask", "error"); return; }
+            showToast("Subtask added");
+            // Refresh project data and update selectedTask with new subtasks
+            const projRes = await fetch(`/api/projects/${childKey}`);
+            if (projRes.ok) {
+              const freshProject = await projRes.json();
+              setProject(freshProject);
+              // Find updated task with its subtasks
+              const allBuckets = [...freshProject.tasks.this_week, ...freshProject.tasks.this_month, ...freshProject.tasks.parked, ...freshProject.tasks.completed];
+              const updated = allBuckets.find((t: NestedTask) => t.id === parentId);
+              if (updated) setSelectedTask(updated);
+            }
           }}
         />
       )}

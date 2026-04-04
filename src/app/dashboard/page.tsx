@@ -8,6 +8,7 @@ import { useToast } from "@/components/toast";
 import { type DashboardTask } from "@/components/expandable-task-row";
 import { type DetailTask } from "@/components/task/task-detail";
 import { useBreakpoint } from "@/hooks/useBreakpoint";
+import { cachedFetch, invalidateCache } from "@/lib/cache";
 
 // Lazy-load heavy components (not needed until user interaction)
 const TaskDetail = dynamic(() => import("@/components/task/task-detail").then((m) => ({ default: m.TaskDetail })), { ssr: false });
@@ -342,10 +343,12 @@ function DashboardContent() {
     setExpandedMission(null);
   }, [parentParam]);
 
-  const fetchDashboard = useCallback(async (tab: string) => {
+  const fetchDashboard = useCallback(async (tab: string, useCache = true) => {
     try {
-      const res = await fetch(`/api/dashboard?parent=${tab}`);
-      const d = await res.json();
+      const url = `/api/dashboard?parent=${tab}`;
+      const d = useCache
+        ? await cachedFetch<Data & { error?: string }>(url, 15000)
+        : await fetch(url).then((r) => r.json());
       if (d.error) throw new Error(d.error);
       setData(d);
     } catch {
@@ -355,6 +358,21 @@ function DashboardContent() {
   }, []);
 
   useEffect(() => { fetchDashboard(activeRoot); }, [activeRoot, fetchDashboard]);
+
+  // Dynamic content update: auto-refresh every 30s when tab is visible
+  useEffect(() => {
+    let timer: ReturnType<typeof setInterval>;
+    function startPolling() {
+      timer = setInterval(() => {
+        if (!document.hidden) {
+          invalidateCache(`/api/dashboard`);
+          fetchDashboard(activeRoot, false);
+        }
+      }, 30000);
+    }
+    startPolling();
+    return () => clearInterval(timer);
+  }, [activeRoot, fetchDashboard]);
 
   function handleTabChange(key: string) {
     router.push(`/dashboard?parent=${key}`, { scroll: false });
@@ -412,6 +430,22 @@ function DashboardContent() {
     }
     return map;
   }, [data]);
+
+  // Keep detailTask subtasks in sync when data refreshes (e.g. after adding subtask)
+  useEffect(() => {
+    if (!detailTask || !data) return;
+    const freshSubs = subtaskMap.get(detailTask.task.id) || [];
+    const freshTask = data.tasks_by_priority.ALL.find((t) => t.id === detailTask.task.id);
+    if (freshTask || freshSubs.length !== detailTask.subtasks.length) {
+      setDetailTask((prev) => {
+        if (!prev) return prev;
+        return {
+          task: freshTask ? (freshTask as unknown as DetailTask) : prev.task,
+          subtasks: freshSubs as unknown as DetailTask[],
+        };
+      });
+    }
+  }, [data, subtaskMap, detailTask]);
 
   // Filter out subtasks from main list (they render inside parents)
   const mainTasks = useMemo(() => {
@@ -548,32 +582,62 @@ function DashboardContent() {
         {/* KPI pills */}
         {data && <KpiRow stats={data.stats} activeFilter={kpiFilter} onFilter={setKpiFilter} />}
 
-        {/* Hook activity ticker */}
-        {data && data.hook_logs.length > 0 && (
-          <div className="flex items-center gap-3 px-6 py-1.5 overflow-x-auto">
-            {data.hook_logs.map((log, i) => {
-              const HOOK_COLORS: Record<string, string> = {
-                "task-sync": "var(--green)",
-                "skill-sync": "var(--purple)",
-                "auto-eos": "var(--orange)",
-              };
+        {/* Latest session card + hook ticker */}
+        {data && (data.sessions.length > 0 || data.hook_logs.length > 0) && (
+          <div className="px-6 py-2 space-y-2">
+            {/* Latest session/EOS card */}
+            {data.sessions.length > 0 && (() => {
+              const latest = data.sessions[0];
               const ago = (() => {
-                const mins = Math.floor((Date.now() - new Date(log.created_at).getTime()) / 60000);
-                if (mins < 1) return "now";
-                if (mins < 60) return `${mins}m`;
+                const mins = Math.floor((Date.now() - new Date(latest.session_date + "T00:00:00").getTime()) / 60000);
+                if (mins < 60) return "just now";
                 const hrs = Math.floor(mins / 60);
-                if (hrs < 24) return `${hrs}h`;
-                return `${Math.floor(hrs / 24)}d`;
+                if (hrs < 24) return `${hrs}h ago`;
+                return `${Math.floor(hrs / 24)}d ago`;
               })();
               return (
-                <div key={i} className="flex items-center gap-1.5 shrink-0">
-                  <span className="w-[6px] h-[6px] rounded-full" style={{ backgroundColor: HOOK_COLORS[log.hook_name] || "var(--text3)" }} />
-                  <span className="text-[10px] text-[var(--text3)] font-medium">{log.hook_name}</span>
-                  <span className="text-[10px] text-[var(--text3)] opacity-60">{log.detail}</span>
-                  <span className="text-[10px] text-[var(--text3)] opacity-40">{ago}</span>
-                </div>
+                <button
+                  onClick={() => router.push(`/session/${latest.id}`)}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-[12px] bg-[var(--card)] border border-[var(--border)] hover:border-[var(--border2)] transition-all text-left"
+                >
+                  <div className="w-[8px] h-[8px] rounded-full shrink-0" style={{ backgroundColor: SURFACE_DOT[latest.surface || ""] || "var(--text3)" }} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] text-[var(--text)] font-medium truncate">{latest.title}</p>
+                    <p className="text-[11px] text-[var(--text3)]">{latest.project_key} · {ago}</p>
+                  </div>
+                  <span className="text-[10px] text-[var(--accent)] font-semibold shrink-0">Latest EOS</span>
+                </button>
               );
-            })}
+            })()}
+
+            {/* Hook activity ticker */}
+            {data.hook_logs.length > 0 && (
+              <div className="flex items-center gap-3 overflow-x-auto">
+                {data.hook_logs.map((log, i) => {
+                  const HOOK_COLORS: Record<string, string> = {
+                    "task-sync": "var(--green)",
+                    "skill-sync": "var(--purple)",
+                    "auto-eos": "var(--orange)",
+                  };
+                  const ago = (() => {
+                    const mins = Math.floor((Date.now() - new Date(log.created_at).getTime()) / 60000);
+                    if (mins < 1) return "now";
+                    if (mins < 60) return `${mins}m`;
+                    const hrs = Math.floor(mins / 60);
+                    if (hrs < 24) return `${hrs}h`;
+                    return `${Math.floor(hrs / 24)}d`;
+                  })();
+                  return (
+                    <div key={i} className="flex items-center gap-1.5 shrink-0">
+                      <span className="w-[6px] h-[6px] rounded-full" style={{ backgroundColor: HOOK_COLORS[log.hook_name] || "var(--text3)" }} />
+                      <span className="text-[10px] text-[var(--text3)] font-medium">{log.hook_name}</span>
+                      <span className="text-[10px] text-[var(--text3)] opacity-60">{log.detail}</span>
+                      <span className="text-[10px] text-[var(--text3)] opacity-40">{ago}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 

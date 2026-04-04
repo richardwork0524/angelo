@@ -12,11 +12,11 @@ const nextConfig: NextConfig = {
 
   // Experimental performance features
   experimental: {
-    // Enable React compiler optimizations (auto-memoization)
+    // Tree-shake + bundle-optimize heavy packages
     optimizePackageImports: ["@supabase/supabase-js"],
   },
 
-  // Cache headers for API routes
+  // Cache headers for API routes and static assets
   async headers() {
     return [
       {
@@ -29,6 +29,25 @@ const nextConfig: NextConfig = {
         source: "/api/dashboard",
         headers: [
           { key: "Cache-Control", value: "private, s-maxage=15, stale-while-revalidate=30" },
+        ],
+      },
+      {
+        source: "/api/projects/:path*",
+        headers: [
+          { key: "Cache-Control", value: "private, s-maxage=20, stale-while-revalidate=40" },
+        ],
+      },
+      {
+        source: "/api/sessions",
+        headers: [
+          { key: "Cache-Control", value: "private, s-maxage=60, stale-while-revalidate=120" },
+        ],
+      },
+      // Long-cache static assets (fonts, icons)
+      {
+        source: "/:path*.(woff2|ico|png|svg)",
+        headers: [
+          { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
         ],
       },
     ];

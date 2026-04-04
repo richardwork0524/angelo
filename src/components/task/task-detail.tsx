@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useBreakpoint } from '@/hooks/useBreakpoint';
 import { PRIORITY_COLORS, SURFACE_COLORS, SURFACE_LABELS, PRIORITIES, BUCKETS, timeAgo } from '@/lib/constants';
 
@@ -40,6 +40,14 @@ export function TaskDetail({ task, subtasks = [], onClose, onUpdate, onDelete, o
   const [visible, setVisible] = useState(true);
   const [localTask, setLocalTask] = useState(task);
   const [saving, setSaving] = useState(false);
+
+  // Sync localTask when parent passes updated task prop (e.g. after data refresh)
+  useEffect(() => {
+    setLocalTask((prev) => {
+      if (prev.id !== task.id || prev.updated_at !== task.updated_at) return task;
+      return prev;
+    });
+  }, [task]);
 
   // Editing states
   const [editingText, setEditingText] = useState(false);

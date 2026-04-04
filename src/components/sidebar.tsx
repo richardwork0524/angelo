@@ -228,7 +228,7 @@ export function Sidebar() {
       {/* Bottom quick add */}
       <div className="px-5 py-4 border-t border-[var(--border)]">
         <button
-          onClick={() => router.push('/dashboard')}
+          onClick={() => window.dispatchEvent(new Event('quick-capture'))}
           className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-[var(--r-sm)] bg-[var(--accent)] text-white text-[13px] font-semibold min-h-[44px] hover:opacity-90 transition-opacity"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">

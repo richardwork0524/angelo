@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
     const [tasksResult, sessionsResult, hookLogsResult] = await Promise.all([
       supabase
         .from("angelo_tasks")
-        .select("id, text, project_key, bucket, priority, surface, is_owner_action, task_type, mission, root, version, updated_at, progress, log, parent_task_id, completed, task_code")
+        .select("id, text, description, project_key, bucket, priority, surface, is_owner_action, mission, version, updated_at, progress, log, parent_task_id, completed, task_code")
         .in("project_key", leafKeys)
         .eq("completed", false)
         .order("updated_at", { ascending: false }),
