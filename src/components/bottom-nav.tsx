@@ -2,37 +2,50 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 
-const tabs = [
+const LEFT_TABS = [
   {
-    label: 'Projects',
+    label: 'Home',
     href: '/dashboard',
     icon: (
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3" y="3" width="7" height="7" rx="1.5" />
-        <rect x="14" y="3" width="7" height="7" rx="1.5" />
-        <rect x="3" y="14" width="7" height="7" rx="1.5" />
-        <rect x="14" y="14" width="7" height="7" rx="1.5" />
+        <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+        <polyline points="9 22 9 12 15 12 15 22" />
       </svg>
     ),
   },
   {
-    label: 'Capture',
-    href: '#capture',
-    icon: (
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <line x1="12" y1="5" x2="12" y2="19" />
-        <line x1="5" y1="12" x2="19" y2="12" />
-      </svg>
-    ),
-    isCapture: true,
-  },
-  {
-    label: 'Skills',
-    href: '/skills',
+    label: 'Tasks',
+    href: '/tasks',
     icon: (
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M4 19.5A2.5 2.5 0 016.5 17H20" />
-        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" />
+        <path d="M9 11l3 3L22 4" />
+        <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
+      </svg>
+    ),
+  },
+];
+
+const RIGHT_TABS = [
+  {
+    label: 'Board',
+    href: '/board',
+    icon: (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="3" width="7" height="7" rx="1" />
+        <rect x="14" y="3" width="7" height="7" rx="1" />
+        <rect x="3" y="14" width="7" height="7" rx="1" />
+        <rect x="14" y="14" width="7" height="7" rx="1" />
+      </svg>
+    ),
+  },
+  {
+    label: 'More',
+    href: '/more',
+    icon: (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="1" />
+        <circle cx="12" cy="5" r="1" />
+        <circle cx="12" cy="19" r="1" />
       </svg>
     ),
   },
@@ -46,38 +59,52 @@ export function BottomNav({ onCapture }: BottomNavProps) {
   const pathname = usePathname();
   const router = useRouter();
 
+  function isActive(href: string) {
+    if (href === '/dashboard') return pathname === '/dashboard' || pathname === '/';
+    return pathname?.startsWith(href);
+  }
+
+  function renderTab(tab: { label: string; href: string; icon: React.ReactNode }) {
+    const active = isActive(tab.href);
+    return (
+      <button
+        key={tab.label}
+        onClick={() => router.push(tab.href)}
+        className={`flex flex-col items-center justify-center flex-1 min-h-[52px] py-2 transition-colors ${
+          active ? 'text-[var(--accent)]' : 'text-[var(--text3)]'
+        }`}
+      >
+        {tab.icon}
+        <span className="text-[10px] font-medium mt-1">{tab.label}</span>
+      </button>
+    );
+  }
+
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-30 flex items-center justify-around bg-[rgba(20,20,20,.95)] backdrop-blur-[20px] border-t border-[var(--border)]"
+      className="fixed bottom-0 left-0 right-0 z-30 bg-[var(--surface)]/95 backdrop-blur-[20px] border-t border-[var(--border)]"
       style={{ paddingBottom: 'var(--safe-b)' }}
     >
-      {tabs.map((tab) => {
-        const isActive = tab.href !== '#capture' && pathname?.startsWith(tab.href);
-        const isCapture = tab.isCapture;
+      <div className="relative flex items-center">
+        {/* Left tabs */}
+        {LEFT_TABS.map(renderTab)}
 
-        return (
+        {/* Center FAB */}
+        <div className="flex-1 flex items-center justify-center">
           <button
-            key={tab.label}
-            onClick={() => {
-              if (isCapture) {
-                onCapture?.();
-              } else {
-                router.push(tab.href);
-              }
-            }}
-            className={`flex flex-col items-center justify-center min-w-[64px] min-h-[52px] py-2 transition-colors ${
-              isCapture
-                ? 'text-[var(--accent)]'
-                : isActive
-                ? 'text-[var(--accent)]'
-                : 'text-[var(--text3)]'
-            }`}
+            onClick={() => onCapture?.()}
+            className="w-[48px] h-[48px] rounded-full bg-[var(--accent)] flex items-center justify-center shadow-lg -mt-4 active:scale-95 transition-transform"
           >
-            {tab.icon}
-            <span className="text-[10px] font-medium mt-1">{tab.label}</span>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
           </button>
-        );
-      })}
+        </div>
+
+        {/* Right tabs */}
+        {RIGHT_TABS.map(renderTab)}
+      </div>
     </nav>
   );
 }

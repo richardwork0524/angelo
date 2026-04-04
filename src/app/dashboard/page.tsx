@@ -6,11 +6,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Fab } from "@/components/fab";
 import { useToast } from "@/components/toast";
 import { type DashboardTask } from "@/components/expandable-task-row";
-import { type ModalTask } from "@/components/task-detail-modal";
+import { type DetailTask } from "@/components/task/task-detail";
 import { useBreakpoint } from "@/hooks/useBreakpoint";
 
 // Lazy-load heavy components (not needed until user interaction)
-const TaskDetailModal = dynamic(() => import("@/components/task-detail-modal").then((m) => ({ default: m.TaskDetailModal })), { ssr: false });
+const TaskDetail = dynamic(() => import("@/components/task/task-detail").then((m) => ({ default: m.TaskDetail })), { ssr: false });
 const QuickCaptureSheet = dynamic(() => import("@/components/quick-capture-sheet").then((m) => ({ default: m.QuickCaptureSheet })), { ssr: false });
 
 /* ── Types ── */
@@ -123,21 +123,21 @@ interface Data {
 /* ── Constants ── */
 
 const ROOT_TABS = [
-  { key: "general", label: "General", color: "#30d158" },
-  { key: "group-strategy", label: "Strategy", color: "#ff9f0a" },
-  { key: "company", label: "Company", color: "#0a84ff" },
-  { key: "development", label: "Dev", color: "#bf5af2" },
+  { key: "general", label: "General", color: "var(--green)" },
+  { key: "group-strategy", label: "Strategy", color: "var(--orange)" },
+  { key: "company", label: "Company", color: "var(--accent)" },
+  { key: "development", label: "Dev", color: "var(--purple)" },
 ];
 
 const URGENCY_TABS = [
   { key: "ALL", label: "All" },
-  { key: "P0", label: "Critical", color: "#ff453a" },
-  { key: "P1", label: "High", color: "#ff9f0a" },
-  { key: "P2", label: "Normal", color: "#ffd60a" },
+  { key: "P0", label: "Critical", color: "var(--red)" },
+  { key: "P1", label: "High", color: "var(--orange)" },
+  { key: "P2", label: "Normal", color: "var(--yellow)" },
 ];
 
-const PRIORITY_DOT: Record<string, string> = { P0: "#ff453a", P1: "#ff9f0a", P2: "#ffd60a" };
-const SURFACE_DOT: Record<string, string> = { CODE: "#0a84ff", CHAT: "#30d158", COWORK: "#bf5af2" };
+const PRIORITY_DOT: Record<string, string> = { P0: "var(--red)", P1: "var(--orange)", P2: "var(--yellow)" };
+const SURFACE_DOT: Record<string, string> = { CODE: "var(--accent)", CHAT: "var(--green)", COWORK: "var(--purple)" };
 
 /* ── Skeleton ── */
 
@@ -158,9 +158,9 @@ type KpiFilter = "P0" | "THIS_WEEK" | "THIS_MONTH" | "ALL" | null;
 
 function KpiRow({ stats, activeFilter, onFilter }: { stats: Data["stats"]; activeFilter: KpiFilter; onFilter: (f: KpiFilter) => void }) {
   const items: { key: KpiFilter; value: number; label: string; color: string; bg: string }[] = [
-    { key: "P0", value: stats.p0, label: "Critical", color: "#ff453a", bg: "var(--red-dim)" },
-    { key: "THIS_WEEK", value: stats.this_week, label: "This Week", color: "#0a84ff", bg: "var(--accent-dim)" },
-    { key: "THIS_MONTH", value: stats.this_month, label: "This Month", color: "#bf5af2", bg: "var(--purple-dim)" },
+    { key: "P0", value: stats.p0, label: "Critical", color: "var(--red)", bg: "var(--red-dim)" },
+    { key: "THIS_WEEK", value: stats.this_week, label: "This Week", color: "var(--accent)", bg: "var(--accent-dim)" },
+    { key: "THIS_MONTH", value: stats.this_month, label: "This Month", color: "var(--purple)", bg: "var(--purple-dim)" },
     { key: "ALL", value: stats.open, label: "Open", color: "var(--text2)", bg: "var(--card)" },
   ];
   return (
@@ -198,7 +198,7 @@ function CompanyCard({ card, onClick, onFilterClick, onTaskClick }: { card: Card
     >
       {/* Header: name + task count (count acts as filter toggle) */}
       <div className="flex items-center justify-between px-4 pt-3 pb-1 text-left w-full">
-        <span className={`text-[14px] font-bold truncate ${hasP0 ? "text-[#ff453a]" : "text-[var(--accent)]"}`}>
+        <span className="text-[14px] font-bold truncate" style={{ color: hasP0 ? "var(--red)" : "var(--accent)" }}>
           {card.display_name}
         </span>
         <button onClick={onFilterClick} className="text-[12px] text-[var(--text3)] tabular-nums shrink-0 ml-2 hover:text-[var(--accent)] transition-colors">{card.open_tasks} open</button>
@@ -223,6 +223,12 @@ function CompanyCard({ card, onClick, onFilterClick, onTaskClick }: { card: Card
                   {t.mission ? " — " : ""}
                   {t.text}
                 </span>
+                {t.surface && (
+                  <span className="inline-flex items-center gap-0.5 shrink-0">
+                    <span className="w-[4px] h-[4px] rounded-full" style={{ backgroundColor: SURFACE_DOT[t.surface] }} />
+                    <span className="text-[9px] text-[var(--text3)]">{t.surface}</span>
+                  </span>
+                )}
                 {t.progress && (
                   <span className="text-[9px] font-bold text-[var(--accent)] tabular-nums shrink-0">{t.progress}</span>
                 )}
@@ -236,8 +242,8 @@ function CompanyCard({ card, onClick, onFilterClick, onTaskClick }: { card: Card
 
       {/* Footer: priority summary */}
       <div className="flex items-center gap-2 px-4 pb-2.5 shrink-0">
-        {card.p0 > 0 && <span className="text-[10px] font-bold text-[#ff453a]">{card.p0} critical</span>}
-        {card.p1 > 0 && <span className="text-[10px] text-[#ff9f0a]">{card.p1} high</span>}
+        {card.p0 > 0 && <span className="text-[10px] font-bold" style={{ color: "var(--red)" }}>{card.p0} critical</span>}
+        {card.p1 > 0 && <span className="text-[10px]" style={{ color: "var(--orange)" }}>{card.p1} high</span>}
         {card.p0 === 0 && card.p1 === 0 && card.open_tasks > 0 && (
           <span className="text-[10px] text-[var(--text3)]">{card.open_tasks} tasks</span>
         )}
@@ -246,21 +252,41 @@ function CompanyCard({ card, onClick, onFilterClick, onTaskClick }: { card: Card
   );
 }
 
-/* ── Session Row ── */
+/* ── Session Row (expandable with detail) ── */
 
-function SessionRow({ s }: { s: Session }) {
+function SessionRow({ s, expanded, onToggle }: { s: Session; expanded: boolean; onToggle: () => void }) {
   const router = useRouter();
   return (
-    <button
-      onClick={() => router.push(`/session/${s.id}`)}
-      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-[8px] hover:bg-[var(--card)] transition-colors text-left"
-    >
-      <div className="w-[8px] h-[8px] rounded-full shrink-0" style={{ backgroundColor: SURFACE_DOT[s.surface || ""] || "var(--text3)" }} />
-      <div className="flex-1 min-w-0">
-        <p className="text-[13px] text-[var(--text)] truncate">{s.title}</p>
-        <p className="text-[11px] text-[var(--text3)]">{s.project_key} · {s.session_date}</p>
-      </div>
-    </button>
+    <div className="rounded-[8px] hover:bg-[var(--card)] transition-colors">
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center gap-3 px-3 py-2.5 text-left"
+      >
+        <div className="w-[8px] h-[8px] rounded-full shrink-0" style={{ backgroundColor: SURFACE_DOT[s.surface || ""] || "var(--text3)" }} />
+        <div className="flex-1 min-w-0">
+          <p className="text-[13px] text-[var(--text)] truncate">{s.title}</p>
+          <p className="text-[11px] text-[var(--text3)]">{s.project_key} · {s.session_date}</p>
+        </div>
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className={`shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`}>
+          <path d="M3 4.5L6 7.5L9 4.5" stroke="var(--text3)" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+      </button>
+      {expanded && (
+        <div className="px-3 pb-3 pl-[32px]">
+          {s.summary ? (
+            <p className="text-[12px] text-[var(--text2)] leading-[1.5] mb-2 whitespace-pre-line line-clamp-6">{s.summary}</p>
+          ) : (
+            <p className="text-[12px] text-[var(--text3)] italic mb-2">No summary available</p>
+          )}
+          <button
+            onClick={() => router.push(`/session/${s.id}`)}
+            className="text-[11px] text-[var(--accent)] hover:underline"
+          >
+            View full session →
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -291,10 +317,18 @@ function DashboardContent() {
   const [selectedCard, setSelectedCard] = useState<string | null>(null);
   const [captureOpen, setCaptureOpen] = useState(false);
   const { showToast, ToastContainer } = useToast();
+
+  // Listen for quick-capture event from bottom nav FAB
+  useEffect(() => {
+    const handler = () => setCaptureOpen(true);
+    window.addEventListener('quick-capture', handler);
+    return () => window.removeEventListener('quick-capture', handler);
+  }, []);
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [kpiFilter, setKpiFilter] = useState<KpiFilter>(null);
   const [expandedMission, setExpandedMission] = useState<string | null>(null);
-  const [modalTask, setModalTask] = useState<{ task: ModalTask; subtasks: ModalTask[] } | null>(null);
+  const [detailTask, setDetailTask] = useState<{ task: DetailTask; subtasks: DetailTask[] } | null>(null);
+  const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
 
   // Sync activeRoot when URL ?parent= changes (e.g. sidebar navigation)
   // Reset all view state so right panel reflects the new category
@@ -431,7 +465,7 @@ function DashboardContent() {
 
   function handleModalDelete(taskId: string) {
     updateTaskOptimistic(taskId, () => null);
-    setModalTask(null);
+    setDetailTask(null);
     bgSync(fetch(`/api/tasks/${taskId}`, { method: "DELETE" }), "Task deleted");
   }
 
@@ -498,7 +532,7 @@ function DashboardContent() {
   }
 
   return (
-    <div className="h-full flex flex-col overflow-hidden bg-[var(--bg)]">
+    <div className={`flex flex-col bg-[var(--bg)] ${isDesktop ? "h-full overflow-hidden" : ""}`}>
       {/* ═══ HEADER ═══ */}
       <header className="shrink-0">
         {/* Title row */}
@@ -519,9 +553,9 @@ function DashboardContent() {
           <div className="flex items-center gap-3 px-6 py-1.5 overflow-x-auto">
             {data.hook_logs.map((log, i) => {
               const HOOK_COLORS: Record<string, string> = {
-                "task-sync": "#30d158",
-                "skill-sync": "#bf5af2",
-                "auto-eos": "#ff9f0a",
+                "task-sync": "var(--green)",
+                "skill-sync": "var(--purple)",
+                "auto-eos": "var(--orange)",
               };
               const ago = (() => {
                 const mins = Math.floor((Date.now() - new Date(log.created_at).getTime()) / 60000);
@@ -533,7 +567,7 @@ function DashboardContent() {
               })();
               return (
                 <div key={i} className="flex items-center gap-1.5 shrink-0">
-                  <span className="w-[6px] h-[6px] rounded-full" style={{ backgroundColor: HOOK_COLORS[log.hook_name] || "#636366" }} />
+                  <span className="w-[6px] h-[6px] rounded-full" style={{ backgroundColor: HOOK_COLORS[log.hook_name] || "var(--text3)" }} />
                   <span className="text-[10px] text-[var(--text3)] font-medium">{log.hook_name}</span>
                   <span className="text-[10px] text-[var(--text3)] opacity-60">{log.detail}</span>
                   <span className="text-[10px] text-[var(--text3)] opacity-40">{ago}</span>
@@ -573,9 +607,9 @@ function DashboardContent() {
           <button onClick={() => fetchDashboard(activeRoot)} className="text-[13px] text-[var(--accent)]">Retry</button>
         </div>
       ) : (
-        <div className="flex-1 flex min-h-0 overflow-hidden">
+        <div className={`flex-1 ${isDesktop ? "flex min-h-0 overflow-hidden" : ""}`}>
           {/* ── LEFT: Card grid + Sessions ── */}
-          <div className="w-[420px] shrink-0 flex flex-col border-r border-[var(--border)] overflow-hidden">
+          <div className={`${isDesktop ? "w-[420px] shrink-0 border-r border-[var(--border)] overflow-hidden" : ""} flex flex-col`}>
             {/* Sessions (collapsible) */}
             <div className={sessionsExpanded ? "flex-1 flex flex-col overflow-hidden" : "shrink-0"}>
               <div className="flex items-center justify-between px-4 py-2.5">
@@ -585,7 +619,21 @@ function DashboardContent() {
                 </button>
               </div>
               <div className={`px-2 ${sessionsExpanded ? "overflow-y-auto flex-1" : ""}`}>
-                {displayedSessions.map((s) => <SessionRow key={s.id} s={s} />)}
+                {displayedSessions.map((s) => (
+                  <SessionRow
+                    key={s.id}
+                    s={s}
+                    expanded={expandedSessionId === s.id}
+                    onToggle={() => setExpandedSessionId(expandedSessionId === s.id ? null : s.id)}
+                  />
+                ))}
+                {!sessionsExpanded && data.session_total > 3 && (
+                  <div className="flex justify-end px-3 py-1.5">
+                    <button onClick={loadAllSessions} className="text-[11px] text-[var(--accent)] hover:underline">
+                      View all ({data.session_total}) →
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -625,7 +673,7 @@ function DashboardContent() {
                                     <span className="text-[13px] font-semibold text-[var(--text)]">{m.mission}</span>
                                   </div>
                                   <div className="flex items-center gap-2">
-                                    {m.p0 > 0 && <span className="w-[6px] h-[6px] rounded-full bg-[#ff453a]" />}
+                                    {m.p0 > 0 && <span className="w-[6px] h-[6px] rounded-full" style={{ backgroundColor: "var(--red)" }} />}
                                     <span className="text-[11px] text-[var(--text3)] tabular-nums">{m.task_count}</span>
                                   </div>
                                 </div>
@@ -642,16 +690,36 @@ function DashboardContent() {
                               </button>
                               {isExpanded && (
                                 <div className="mt-1 space-y-0.5 pl-3">
-                                  {m.tasks.slice(0, 5).map((t) => (
-                                    <div key={t.id} className="flex items-center gap-2 px-3 py-1.5 rounded-[8px] hover:bg-[var(--card)]/50">
-                                      {t.priority && (
-                                        <span className="w-[6px] h-[6px] rounded-full shrink-0" style={{ backgroundColor: t.priority === "P0" ? "#ff453a" : t.priority === "P1" ? "#ff9f0a" : "#ffd60a" }} />
-                                      )}
-                                      {t.task_code && <span className="text-[10px] font-mono text-[var(--accent)] shrink-0">{t.task_code}</span>}
-                                      <span className="text-[12px] text-[var(--text2)] line-clamp-1 flex-1">{t.text}</span>
-                                      {t.surface && <span className="text-[9px] px-1.5 py-0.5 rounded bg-[var(--card)] text-[var(--text3)] shrink-0">{t.surface}</span>}
-                                    </div>
-                                  ))}
+                                  {m.tasks.slice(0, 5).map((t) => {
+                                    const taskFull = data.tasks_by_priority.ALL.find((ft) => ft.id === t.id);
+                                    const subs = (subtaskMap.get(t.id) || []) as unknown as DetailTask[];
+                                    return (
+                                      <button
+                                        key={t.id}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (taskFull) {
+                                            setDetailTask({ task: taskFull as unknown as DetailTask, subtasks: subs });
+                                          } else {
+                                            setDetailTask({ task: { ...t, description: null, version: null, completed: false, log: null, bucket: t.bucket || "THIS_WEEK", project_key: t.project_key, is_owner_action: t.is_owner_action, parent_task_id: null, mission: m.mission } as unknown as DetailTask, subtasks: subs });
+                                          }
+                                        }}
+                                        className="w-full flex items-center gap-2 px-3 py-1.5 rounded-[8px] hover:bg-[var(--card2)] transition-colors text-left"
+                                      >
+                                        {t.priority && (
+                                          <span className="w-[6px] h-[6px] rounded-full shrink-0" style={{ backgroundColor: PRIORITY_DOT[t.priority] || "var(--border2)" }} />
+                                        )}
+                                        {t.task_code && <span className="text-[10px] font-mono text-[var(--accent)] shrink-0">{t.task_code}</span>}
+                                        <span className="text-[12px] text-[var(--text2)] line-clamp-1 flex-1">{t.text}</span>
+                                        {t.surface && (
+                                          <span className="inline-flex items-center gap-0.5 shrink-0">
+                                            <span className="w-[4px] h-[4px] rounded-full" style={{ backgroundColor: SURFACE_DOT[t.surface] }} />
+                                            <span className="text-[9px] text-[var(--text3)]">{t.surface}</span>
+                                          </span>
+                                        )}
+                                      </button>
+                                    );
+                                  })}
                                   {m.task_count > 5 && (
                                     <p className="text-[10px] text-[var(--text3)] opacity-60 px-3 py-1">+{m.task_count - 5} more</p>
                                   )}
@@ -701,7 +769,10 @@ function DashboardContent() {
                         if (selectedCard === card.child_key) setSelectedCard(null);
                         else setSelectedCard(card.child_key);
                       }}
-                      onTaskClick={(t) => setModalTask({ task: { ...t, description: null, version: null, completed: false, log: null } as ModalTask, subtasks: [] })}
+                      onTaskClick={(t) => {
+                        const subs = (subtaskMap.get(t.id) || []) as unknown as DetailTask[];
+                        setDetailTask({ task: { ...t, description: null, version: null, completed: false, log: null } as DetailTask, subtasks: subs });
+                      }}
                     />
                   ))}
                 </div>
@@ -710,7 +781,7 @@ function DashboardContent() {
           </div>
 
           {/* ── RIGHT: Task list ── */}
-          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          <div className={`flex-1 flex flex-col ${isDesktop ? "min-h-0 overflow-hidden" : "mt-2 border-t border-[var(--border)]"}`}>
             {/* Urgency tabs */}
             <div className="shrink-0 flex items-center gap-1 px-6 py-3 border-b border-[var(--border)]">
               {URGENCY_TABS.map((tab) => {
@@ -740,7 +811,7 @@ function DashboardContent() {
             </div>
 
             {/* Task list */}
-            <div className="flex-1 overflow-y-auto px-6 py-3">
+            <div className={`px-6 py-3 ${isDesktop ? "flex-1 overflow-y-auto" : ""}`}>
               {mainTasks.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full">
                   <div className="w-12 h-12 rounded-full bg-[var(--card)] flex items-center justify-center mb-3">
@@ -759,9 +830,9 @@ function DashboardContent() {
                     return (
                       <button
                         key={t.id}
-                        onClick={() => setModalTask({
-                          task: t as unknown as ModalTask,
-                          subtasks: subs as unknown as ModalTask[],
+                        onClick={() => setDetailTask({
+                          task: t as unknown as DetailTask,
+                          subtasks: subs as unknown as DetailTask[],
                         })}
                         className="w-full flex items-start gap-2.5 px-3 py-2.5 rounded-[8px] bg-[var(--card)] border border-[var(--border)] hover:border-[var(--border2)] transition-all text-left"
                       >
@@ -812,11 +883,11 @@ function DashboardContent() {
       )}
 
       {/* Task detail modal (from card/mission clicks) */}
-      {modalTask && (
-        <TaskDetailModal
-          task={modalTask.task}
-          subtasks={modalTask.subtasks}
-          onClose={() => { setModalTask(null); fetchDashboard(activeRoot); }}
+      {detailTask && (
+        <TaskDetail
+          task={detailTask.task}
+          subtasks={detailTask.subtasks}
+          onClose={() => { setDetailTask(null); fetchDashboard(activeRoot); }}
           onUpdate={handleModalUpdate}
           onDelete={handleModalDelete}
           onAddSubtask={async (parentId, text) => {
@@ -835,7 +906,7 @@ function DashboardContent() {
       )}
 
       <ToastContainer />
-      <Fab onPress={() => setCaptureOpen(true)} />
+      {isDesktop && <Fab onPress={() => setCaptureOpen(true)} />}
       <QuickCaptureSheet
         open={captureOpen}
         onClose={() => setCaptureOpen(false)}

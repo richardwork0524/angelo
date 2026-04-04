@@ -7,7 +7,7 @@ import { PullToRefresh } from "@/components/pull-to-refresh";
 import { ErrorBanner } from "@/components/error-banner";
 import { EmptyState } from "@/components/empty-state";
 import { Toast } from "@/components/toast";
-import { TaskDetailModal, type ModalTask } from "@/components/task-detail-modal";
+import { TaskDetail, type DetailTask } from "@/components/task/task-detail";
 
 interface MissionTask {
   id: string;
@@ -38,7 +38,7 @@ interface MissionDetail {
   };
 }
 
-const PRIORITY_COLORS: Record<string, string> = { P0: "#ff453a", P1: "#ff9f0a", P2: "#ffd60a" };
+const PRIORITY_COLORS: Record<string, string> = { P0: "var(--red)", P1: "var(--orange)", P2: "var(--yellow)" };
 
 export default function MissionDetailPage() {
   const params = useParams();
@@ -161,7 +161,7 @@ export default function MissionDetailPage() {
             ) : (
               <div className="px-4 py-3">
                 <BucketSection title="THIS WEEK" tasks={mission.tasks.this_week} color="var(--accent)" onTaskClick={setSelectedTask} />
-                <BucketSection title="THIS MONTH" tasks={mission.tasks.this_month} color="#bf5af2" onTaskClick={setSelectedTask} />
+                <BucketSection title="THIS MONTH" tasks={mission.tasks.this_month} color="var(--purple)" onTaskClick={setSelectedTask} />
                 <BucketSection title="PARKED" tasks={mission.tasks.parked} color="var(--text3)" onTaskClick={setSelectedTask} />
 
                 {mission.tasks.completed.length > 0 && (
@@ -173,7 +173,7 @@ export default function MissionDetailPage() {
                       <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className={`transition-transform ${showCompleted ? "rotate-90" : ""}`}>
                         <path d="M4 2L8 6L4 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                       </svg>
-                      <span style={{ color: "#30d158" }}>✓</span>
+                      <span style={{ color: "var(--green)" }}>✓</span>
                       Completed ({mission.tasks.completed.length})
                     </button>
                     {showCompleted && (
@@ -193,8 +193,8 @@ export default function MissionDetailPage() {
 
       {/* Task detail modal */}
       {selectedTask && (
-        <TaskDetailModal
-          task={selectedTask as ModalTask}
+        <TaskDetail
+          task={selectedTask as DetailTask}
           onClose={() => { setSelectedTask(null); fetchMission(); }}
           onUpdate={handleTaskUpdate}
           onDelete={handleTaskDelete}

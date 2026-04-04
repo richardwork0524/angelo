@@ -1,12 +1,16 @@
 'use client';
 
-import { Suspense } from 'react';
+import { Suspense, useCallback } from 'react';
 import { useBreakpoint } from '@/hooks/useBreakpoint';
 import { BottomNav } from './bottom-nav';
 import { Sidebar } from './sidebar';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const isDesktop = useBreakpoint(768);
+
+  const handleCapture = useCallback(() => {
+    window.dispatchEvent(new Event('quick-capture'));
+  }, []);
 
   if (isDesktop) {
     return (
@@ -27,9 +31,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-[var(--bg)]">
-      <main className="flex-1 pb-[60px]">{children}</main>
-      <BottomNav />
+    <div className="flex flex-col h-[100dvh] overflow-hidden bg-[var(--bg)]">
+      <main className="flex-1 overflow-y-auto min-h-0" style={{ paddingBottom: 'calc(60px + var(--safe-b))' }}>
+        {children}
+      </main>
+      <BottomNav onCapture={handleCapture} />
     </div>
   );
 }

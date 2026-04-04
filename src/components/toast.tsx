@@ -21,7 +21,7 @@ export function Toast({ message, type = "success", onDismiss, persistent, durati
     }
   }, [onDismiss, persistent, duration]);
 
-  const bgColor = type === "error" ? "bg-[var(--red)]" : type === "info" ? "bg-[var(--card)]" : "bg-[#1c1c1e]";
+  const bgColor = type === "error" ? "bg-[var(--red)]" : type === "info" ? "bg-[var(--card)]" : "bg-[var(--card)]";
   const borderColor = type === "error" ? "border-[var(--red)]" : type === "info" ? "border-[var(--border2)]" : "border-[var(--green)]";
 
   return (

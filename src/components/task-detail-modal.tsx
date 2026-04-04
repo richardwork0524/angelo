@@ -33,8 +33,8 @@ interface Props {
 
 /* ── Constants ── */
 
-const PRIORITY_DOT: Record<string, string> = { P0: "#ff453a", P1: "#ff9f0a", P2: "#ffd60a" };
-const SURFACE_DOT: Record<string, string> = { CODE: "#0a84ff", CHAT: "#30d158", COWORK: "#bf5af2" };
+const PRIORITY_DOT: Record<string, string> = { P0: "var(--red)", P1: "var(--orange)", P2: "var(--yellow)" };
+const SURFACE_DOT: Record<string, string> = { CODE: "var(--accent)", CHAT: "var(--green)", COWORK: "var(--purple)" };
 const SURFACE_LABEL: Record<string, string> = { CODE: "Claude Code", CHAT: "Claude Chat", COWORK: "Claude Cowork" };
 const PRIORITIES = ["P0", "P1", "P2"];
 const BUCKETS = [

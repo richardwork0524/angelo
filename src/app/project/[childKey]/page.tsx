@@ -11,9 +11,9 @@ import { EmptyState } from "@/components/empty-state";
 import { useToast } from "@/components/toast";
 import { ProjectCard } from "@/components/project-card";
 import { SessionLogList } from "@/components/session-log-list";
-import { type ModalTask } from "@/components/task-detail-modal";
+import { type DetailTask } from "@/components/task/task-detail";
 
-const TaskDetailModal = dynamic(() => import("@/components/task-detail-modal").then((m) => ({ default: m.TaskDetailModal })), { ssr: false });
+const TaskDetail = dynamic(() => import("@/components/task/task-detail").then((m) => ({ default: m.TaskDetail })), { ssr: false });
 
 interface NestedTask {
   id: string;
@@ -80,7 +80,7 @@ interface ProjectDetail {
   session_logs: SessionLog[];
 }
 
-const PRIORITY_MISSION: Record<string, string> = { P0: "#ff453a", P1: "#ff9f0a", P2: "#ffd60a" };
+const PRIORITY_MISSION: Record<string, string> = { P0: "var(--red)", P1: "var(--orange)", P2: "var(--yellow)" };
 
 export default function ProjectDetailPage() {
   const params = useParams();
@@ -502,11 +502,21 @@ export default function ProjectDetailPage() {
       )}
 
       {selectedTask && (
-        <TaskDetailModal
-          task={selectedTask as unknown as ModalTask}
+        <TaskDetail
+          task={selectedTask as unknown as DetailTask}
           onClose={() => { setSelectedTask(null); fetchProject(); }}
           onUpdate={handleModalUpdate}
           onDelete={handleModalDelete}
+          onAddSubtask={async (parentId, text) => {
+            bgSync(
+              fetch(`/api/projects/${childKey}/tasks`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ text, bucket: selectedTask.bucket || "THIS_WEEK", parent_task_id: parentId }),
+              }),
+              "Subtask added"
+            );
+          }}
         />
       )}
 
