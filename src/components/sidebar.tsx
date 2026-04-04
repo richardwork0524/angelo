@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { buildTree, type TreeNode } from '@/lib/tree';
 import type { ProjectNode } from '@/lib/tree';
+import { cachedFetch } from '@/lib/cache';
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -16,9 +17,7 @@ export function Sidebar() {
 
   const fetchProjects = useCallback(async () => {
     try {
-      const res = await fetch('/api/projects');
-      if (!res.ok) return;
-      const data = await res.json();
+      const data = await cachedFetch<{ projects: ProjectNode[] }>('/api/projects', 30000);
       setProjects(data.projects);
       setTree(buildTree(data.projects));
     } catch {
@@ -96,14 +95,15 @@ export function Sidebar() {
     const isExp = expanded.has(node.child_key);
     const active = isActive(node);
     const taskCount = getTaskTotal(node);
+    const isRoot = depth === 0;
 
     return (
-      <div key={node.child_key}>
+      <div key={node.child_key} className={isRoot ? 'mt-3 first:mt-0' : ''}>
         <div
-          className={`flex items-center gap-1.5 pr-3 py-1.5 rounded-[var(--r-sm)] cursor-pointer transition-colors min-h-[36px] group ${
-            active
-              ? 'bg-[var(--accent-dim)] border-l-2 border-[var(--accent)]'
-              : 'hover:bg-[var(--card)] border-l-2 border-transparent'
+          className={`flex items-center gap-1.5 pr-3 rounded-[var(--r-sm)] cursor-pointer transition-colors group ${
+            isRoot
+              ? `py-2 min-h-[40px] ${active ? 'bg-[var(--accent-dim)] border-l-2 border-[var(--accent)]' : 'hover:bg-[var(--card)] border-l-2 border-transparent'}`
+              : `py-1.5 min-h-[36px] ${active ? 'bg-[var(--accent-dim)] border-l-2 border-[var(--accent)]' : 'hover:bg-[var(--card)] border-l-2 border-transparent'}`
           }`}
           style={{ paddingLeft: `${12 + depth * 16}px` }}
         >
@@ -130,8 +130,10 @@ export function Sidebar() {
           {/* Name + badge */}
           <button
             onClick={() => handleNodeClick(node)}
-            className={`flex-1 text-left text-[13px] font-medium truncate min-h-[28px] flex items-center ${
-              active ? 'text-[var(--accent)]' : 'text-[var(--text2)] group-hover:text-[var(--text)]'
+            className={`flex-1 text-left truncate min-h-[28px] flex items-center ${
+              isRoot
+                ? `text-[11px] font-bold uppercase tracking-[0.06em] ${active ? 'text-[var(--accent)]' : 'text-[var(--text3)] group-hover:text-[var(--text2)]'}`
+                : `text-[13px] font-medium ${active ? 'text-[var(--accent)]' : 'text-[var(--text2)] group-hover:text-[var(--text)]'}`
             }`}
           >
             {node.display_name}

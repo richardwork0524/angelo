@@ -5,7 +5,7 @@ import { useState } from "react";
 interface TaskAddBarProps {
   projects?: { child_key: string; display_name: string }[];
   selectedProject?: string;
-  onSubmit: (text: string, bucket: string, projectKey?: string) => Promise<void>;
+  onSubmit: (text: string, bucket: string, projectKey?: string) => void | Promise<void>;
   position?: "top" | "bottom";
 }
 

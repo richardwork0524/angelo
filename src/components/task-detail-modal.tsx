@@ -26,9 +26,9 @@ interface Props {
   task: ModalTask;
   subtasks?: ModalTask[];
   onClose: () => void;
-  onUpdate: (taskId: string, fields: Record<string, unknown>) => Promise<void>;
-  onDelete?: (taskId: string) => Promise<void>;
-  onAddSubtask?: (parentId: string, text: string) => Promise<void>;
+  onUpdate: (taskId: string, fields: Record<string, unknown>) => void | Promise<void>;
+  onDelete?: (taskId: string) => void | Promise<void>;
+  onAddSubtask?: (parentId: string, text: string) => void | Promise<void>;
 }
 
 /* ── Constants ── */

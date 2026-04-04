@@ -1,16 +1,19 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useParams } from "next/navigation";
+import dynamic from "next/dynamic";
+import { useParams, useRouter } from "next/navigation";
 import { StickyHeader } from "@/components/sticky-header";
 import { TaskAddBar } from "@/components/task-add-bar";
 import { PullToRefresh } from "@/components/pull-to-refresh";
 import { ErrorBanner } from "@/components/error-banner";
 import { EmptyState } from "@/components/empty-state";
-import { Toast } from "@/components/toast";
+import { useToast } from "@/components/toast";
 import { ProjectCard } from "@/components/project-card";
 import { SessionLogList } from "@/components/session-log-list";
-import { TaskDetailModal, type ModalTask } from "@/components/task-detail-modal";
+import { type ModalTask } from "@/components/task-detail-modal";
+
+const TaskDetailModal = dynamic(() => import("@/components/task-detail-modal").then((m) => ({ default: m.TaskDetailModal })), { ssr: false });
 
 interface NestedTask {
   id: string;
@@ -40,6 +43,22 @@ interface SessionLog {
   summary: string | null;
 }
 
+interface MissionInfo {
+  mission: string;
+  task_count: number;
+  p0: number;
+  p1: number;
+  p2: number;
+  tasks: { id: string; text: string; priority: string | null; task_code: string | null; project_key: string; bucket: string; completed: boolean; updated_at: string }[];
+}
+
+interface ChildInfo {
+  child_key: string;
+  display_name: string;
+  status: string | null;
+  open_tasks: number;
+}
+
 interface ProjectDetail {
   child_key: string;
   display_name: string;
@@ -49,38 +68,41 @@ interface ProjectDetail {
   surface: string | null;
   last_session_date: string | null;
   next_action: string | null;
+  is_leaf: boolean;
   tasks: {
     this_week: NestedTask[];
     this_month: NestedTask[];
     parked: NestedTask[];
     completed: NestedTask[];
   };
+  missions: MissionInfo[];
+  children_info: ChildInfo[];
   session_logs: SessionLog[];
 }
 
+const PRIORITY_MISSION: Record<string, string> = { P0: "#ff453a", P1: "#ff9f0a", P2: "#ffd60a" };
+
 export default function ProjectDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const childKey = params.childKey as string;
 
   const [project, setProject] = useState<ProjectDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
   const [showCompleted, setShowCompleted] = useState(false);
   const [moveSheet, setMoveSheet] = useState<{ taskId: string; currentBucket: string } | null>(null);
   const [selectedTask, setSelectedTask] = useState<NestedTask | null>(null);
+  const [expandedMission, setExpandedMission] = useState<string | null>(null);
+  const { showToast, ToastContainer } = useToast();
 
   const fetchProject = useCallback(async () => {
     try {
       setError(null);
       const res = await fetch(`/api/projects/${childKey}`);
-      if (res.status === 404) {
-        setError("Project not found.");
-        return;
-      }
+      if (res.status === 404) { setError("Project not found."); return; }
       if (!res.ok) throw new Error("Failed");
-      const data = await res.json();
-      setProject(data);
+      setProject(await res.json());
     } catch {
       setError("Failed to load tasks. Pull to retry.");
     } finally {
@@ -88,89 +110,181 @@ export default function ProjectDetailPage() {
     }
   }, [childKey]);
 
-  useEffect(() => {
-    fetchProject();
-  }, [fetchProject]);
+  useEffect(() => { fetchProject(); }, [fetchProject]);
 
-  async function handleToggleTask(taskId: string, currentCompleted: boolean) {
-    const newStatus = currentCompleted ? "open" : "completed";
-    try {
-      const res = await fetch(`/api/projects/${childKey}/tasks/${taskId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: newStatus }),
-      });
-      if (!res.ok) throw new Error("Failed");
-      await fetchProject();
-    } catch {
-      setToast("Failed to update task. Try again.");
-    }
+  // ── Helper: optimistically update a task in local state ──
+  function updateTaskInState(taskId: string, updater: (t: NestedTask) => NestedTask | null) {
+    setProject((prev) => {
+      if (!prev) return prev;
+      function walkTasks(tasks: NestedTask[]): NestedTask[] {
+        return tasks.reduce<NestedTask[]>((acc, t) => {
+          if (t.id === taskId) {
+            const updated = updater(t);
+            if (updated) acc.push({ ...updated, sub_tasks: walkTasks(updated.sub_tasks) });
+            // null = deleted
+          } else {
+            acc.push({ ...t, sub_tasks: walkTasks(t.sub_tasks) });
+          }
+          return acc;
+        }, []);
+      }
+      return {
+        ...prev,
+        tasks: {
+          this_week: walkTasks(prev.tasks.this_week),
+          this_month: walkTasks(prev.tasks.this_month),
+          parked: walkTasks(prev.tasks.parked),
+          completed: walkTasks(prev.tasks.completed),
+        },
+      };
+    });
   }
 
-  async function handleUpdateText(taskId: string, text: string) {
-    try {
-      const res = await fetch(`/api/projects/${childKey}/tasks/${taskId}`, {
+  // ── Background sync helper ──
+  function bgSync(promise: Promise<Response>, successMsg: string) {
+    promise.then((res) => {
+      if (!res.ok) throw new Error("Failed");
+      showToast(successMsg);
+      // Silent background refresh to sync any server-generated fields
+      fetchProject();
+    }).catch(() => {
+      showToast("Sync failed — retrying...", "error");
+      fetchProject(); // Revert to server state
+    });
+  }
+
+  function handleToggleTask(taskId: string, currentCompleted: boolean) {
+    const newCompleted = !currentCompleted;
+    // Optimistic: move task between buckets
+    setProject((prev) => {
+      if (!prev) return prev;
+      const allBuckets = [...prev.tasks.this_week, ...prev.tasks.this_month, ...prev.tasks.parked, ...prev.tasks.completed];
+      function findAndRemove(tasks: NestedTask[]): { found: NestedTask | null; remaining: NestedTask[] } {
+        let found: NestedTask | null = null;
+        const remaining = tasks.filter((t) => {
+          if (t.id === taskId) { found = t; return false; }
+          return true;
+        });
+        return { found, remaining };
+      }
+      const bucketKeys = ["this_week", "this_month", "parked", "completed"] as const;
+      let foundTask: NestedTask | null = null;
+      const newTasks = { ...prev.tasks };
+      for (const bk of bucketKeys) {
+        const { found, remaining } = findAndRemove(newTasks[bk]);
+        if (found) { foundTask = found; newTasks[bk] = remaining; break; }
+      }
+      if (foundTask) {
+        const updated = { ...foundTask, completed: newCompleted };
+        if (newCompleted) {
+          newTasks.completed = [updated, ...newTasks.completed];
+        } else {
+          const bucket = (foundTask.bucket === "THIS_WEEK" ? "this_week" : foundTask.bucket === "THIS_MONTH" ? "this_month" : "parked") as keyof typeof newTasks;
+          newTasks[bucket] = [...newTasks[bucket], updated];
+        }
+      }
+      return { ...prev, tasks: newTasks };
+    });
+    bgSync(
+      fetch(`/api/projects/${childKey}/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newCompleted ? "completed" : "open" }),
+      }),
+      newCompleted ? "Task completed" : "Task reopened"
+    );
+  }
+
+  function handleUpdateText(taskId: string, text: string) {
+    updateTaskInState(taskId, (t) => ({ ...t, text }));
+    bgSync(
+      fetch(`/api/projects/${childKey}/tasks/${taskId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text }),
-      });
-      if (!res.ok) throw new Error("Failed");
-      await fetchProject();
-    } catch {
-      setToast("Failed to update task. Try again.");
-    }
+      }),
+      "Saved"
+    );
   }
 
-  async function handleMoveTask(taskId: string, targetBucket: string) {
+  function handleMoveTask(taskId: string, targetBucket: string) {
     setMoveSheet(null);
-    try {
-      const res = await fetch(`/api/projects/${childKey}/tasks/${taskId}/move`, {
+    // Optimistic: move between bucket lists
+    setProject((prev) => {
+      if (!prev) return prev;
+      const bucketMap: Record<string, keyof ProjectDetail["tasks"]> = {
+        THIS_WEEK: "this_week", THIS_MONTH: "this_month", PARKED: "parked",
+      };
+      let foundTask: NestedTask | null = null;
+      const newTasks = { ...prev.tasks };
+      for (const bk of ["this_week", "this_month", "parked"] as const) {
+        const idx = newTasks[bk].findIndex((t) => t.id === taskId);
+        if (idx >= 0) {
+          foundTask = newTasks[bk][idx];
+          newTasks[bk] = [...newTasks[bk].slice(0, idx), ...newTasks[bk].slice(idx + 1)];
+          break;
+        }
+      }
+      if (foundTask) {
+        const target = bucketMap[targetBucket] || "parked";
+        newTasks[target] = [...newTasks[target], { ...foundTask, bucket: targetBucket }];
+      }
+      return { ...prev, tasks: newTasks };
+    });
+    bgSync(
+      fetch(`/api/projects/${childKey}/tasks/${taskId}/move`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ target_bucket: targetBucket }),
-      });
-      if (!res.ok) throw new Error("Failed");
-      await fetchProject();
-    } catch {
-      setToast("Failed to move task. Try again.");
-    }
+      }),
+      "Moved"
+    );
   }
 
-  async function handleModalUpdate(taskId: string, fields: Record<string, unknown>) {
-    try {
-      const res = await fetch(`/api/tasks/${taskId}`, {
+  function handleModalUpdate(taskId: string, fields: Record<string, unknown>) {
+    updateTaskInState(taskId, (t) => ({ ...t, ...fields } as NestedTask));
+    bgSync(
+      fetch(`/api/tasks/${taskId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(fields),
-      });
-      if (!res.ok) throw new Error("Failed");
-      setToast("Updated");
-      await fetchProject();
-    } catch {
-      setToast("Failed to update");
-    }
+      }),
+      "Updated"
+    );
   }
 
-  async function handleModalDelete(taskId: string) {
-    try {
-      const res = await fetch(`/api/tasks/${taskId}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed");
-      setToast("Task deleted");
-      setSelectedTask(null);
-      await fetchProject();
-    } catch {
-      setToast("Failed to delete");
-    }
+  function handleModalDelete(taskId: string) {
+    updateTaskInState(taskId, () => null);
+    setSelectedTask(null);
+    bgSync(
+      fetch(`/api/tasks/${taskId}`, { method: "DELETE" }),
+      "Task deleted"
+    );
   }
 
-  async function handleAddTask(text: string, bucket: string) {
-    const res = await fetch(`/api/projects/${childKey}/tasks`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, bucket }),
+  function handleAddTask(text: string, bucket: string) {
+    // Optimistic: add placeholder
+    const tempId = `temp-${Date.now()}`;
+    const newTask: NestedTask = {
+      id: tempId, text, description: null, completed: false, bucket,
+      priority: null, is_owner_action: false, parent_task_id: null,
+      task_code: null, mission: null, version: null, surface: null,
+      progress: null, log: null, updated_at: new Date().toISOString(),
+      project_key: childKey, sub_tasks: [],
+    };
+    setProject((prev) => {
+      if (!prev) return prev;
+      const bk = (bucket === "THIS_WEEK" ? "this_week" : bucket === "THIS_MONTH" ? "this_month" : "parked") as keyof ProjectDetail["tasks"];
+      return { ...prev, tasks: { ...prev.tasks, [bk]: [...prev.tasks[bk], newTask] } };
     });
-    if (!res.ok) throw new Error("Failed");
-    await fetchProject();
+    bgSync(
+      fetch(`/api/projects/${childKey}/tasks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, bucket }),
+      }),
+      "Task added"
+    );
   }
 
   const totalOpen = project
@@ -239,6 +353,73 @@ export default function ProjectDetailPage() {
                 variant="detailed"
               />
             </div>
+
+            {/* Children entities (non-leaf) */}
+            {project.children_info && project.children_info.length > 0 && (
+              <div className="px-4 pt-3">
+                <h2 className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-[0.07em] mb-2">Sub-projects</h2>
+                <div className="grid grid-cols-2 gap-2">
+                  {project.children_info.map((child) => (
+                    <button
+                      key={child.child_key}
+                      onClick={() => router.push(`/project/${child.child_key}`)}
+                      className="text-left px-3 py-2.5 rounded-[var(--r-sm)] bg-[var(--card)] border border-[var(--border)] hover:border-[var(--border2)] transition-all"
+                    >
+                      <span className="text-[13px] font-semibold text-[var(--accent)] block truncate">{child.display_name}</span>
+                      <span className="text-[11px] text-[var(--text3)]">{child.open_tasks} open tasks</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Missions */}
+            {project.missions && project.missions.length > 0 && (
+              <div className="px-4 pt-3">
+                <h2 className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-[0.07em] mb-2">Missions</h2>
+                <div className="space-y-1.5">
+                  {project.missions.map((m) => {
+                    const isExp = expandedMission === m.mission;
+                    return (
+                      <div key={m.mission}>
+                        <button
+                          onClick={() => setExpandedMission(isExp ? null : m.mission)}
+                          className="w-full text-left px-3 py-2.5 rounded-[10px] bg-[var(--card)] border border-[var(--border)] hover:border-[var(--border2)] transition-all"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className={`transition-transform shrink-0 ${isExp ? "rotate-90" : ""}`}>
+                                <path d="M3 1L7 5L3 9" stroke="var(--text3)" strokeWidth="1.5" strokeLinecap="round" />
+                              </svg>
+                              <span className="text-[13px] font-semibold text-[var(--text)]">{m.mission}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {m.p0 > 0 && <span className="w-[6px] h-[6px] rounded-full" style={{ backgroundColor: PRIORITY_MISSION.P0 }} />}
+                              {m.p1 > 0 && <span className="w-[6px] h-[6px] rounded-full" style={{ backgroundColor: PRIORITY_MISSION.P1 }} />}
+                              <span className="text-[11px] text-[var(--text3)] tabular-nums">{m.task_count} tasks</span>
+                            </div>
+                          </div>
+                        </button>
+                        {isExp && (
+                          <div className="mt-1 space-y-0.5 pl-3">
+                            {m.tasks.map((t) => (
+                              <div key={t.id} className="flex items-center gap-2 px-3 py-1.5 rounded-[8px] hover:bg-[var(--card)]/50 transition-colors">
+                                {t.priority && <span className="w-[6px] h-[6px] rounded-full shrink-0" style={{ backgroundColor: PRIORITY_MISSION[t.priority] || "var(--border2)" }} />}
+                                {t.task_code && <span className="text-[10px] font-mono text-[var(--accent)] shrink-0">{t.task_code}</span>}
+                                <span className="text-[12px] text-[var(--text2)] line-clamp-1 flex-1">{t.text}</span>
+                                <span className="text-[10px] text-[var(--text3)] px-1.5 py-0.5 rounded bg-[var(--card)] shrink-0">
+                                  {t.bucket === "THIS_WEEK" ? "Week" : t.bucket === "THIS_MONTH" ? "Month" : "Parked"}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Session logs */}
             {project.session_logs && project.session_logs.length > 0 && (
@@ -329,7 +510,7 @@ export default function ProjectDetailPage() {
         />
       )}
 
-      {toast && <Toast message={toast} onDismiss={() => setToast(null)} persistent />}
+      <ToastContainer />
     </div>
   );
 }

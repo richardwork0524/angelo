@@ -1,12 +1,17 @@
 "use client";
 
 import { Suspense, useEffect, useState, useCallback, useMemo } from "react";
+import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Fab } from "@/components/fab";
-import { QuickCaptureSheet } from "@/components/quick-capture-sheet";
-import { Toast } from "@/components/toast";
+import { useToast } from "@/components/toast";
 import { type DashboardTask } from "@/components/expandable-task-row";
-import { TaskDetailModal, type ModalTask } from "@/components/task-detail-modal";
+import { type ModalTask } from "@/components/task-detail-modal";
+import { useBreakpoint } from "@/hooks/useBreakpoint";
+
+// Lazy-load heavy components (not needed until user interaction)
+const TaskDetailModal = dynamic(() => import("@/components/task-detail-modal").then((m) => ({ default: m.TaskDetailModal })), { ssr: false });
+const QuickCaptureSheet = dynamic(() => import("@/components/quick-capture-sheet").then((m) => ({ default: m.QuickCaptureSheet })), { ssr: false });
 
 /* ── Types ── */
 
@@ -97,11 +102,19 @@ interface Mission {
   tasks: MissionTaskPreview[];
 }
 
+interface EntityMissions {
+  entity_key: string;
+  entity_name: string;
+  missions: Mission[];
+  total_mission_tasks: number;
+}
+
 interface Data {
   stats: { open: number; p0: number; p1: number; p2: number; this_week: number; this_month: number };
   cards: Card[];
   tasks_by_priority: { P0: Task[]; P1: Task[]; P2: Task[]; ALL: Task[] };
   missions: Mission[];
+  missions_by_entity: EntityMissions[];
   hook_logs: HookLog[];
   sessions: Session[];
   session_total: number;
@@ -175,21 +188,21 @@ function KpiRow({ stats, activeFilter, onFilter }: { stats: Data["stats"]; activ
 
 /* ── Company Card (reference-style: 2-col grid with task previews) ── */
 
-function CompanyCard({ card, onClick, onTaskClick }: { card: Card; onClick: () => void; onTaskClick: (t: TaskPreview) => void }) {
+function CompanyCard({ card, onClick, onFilterClick, onTaskClick }: { card: Card; onClick: () => void; onFilterClick: (e: React.MouseEvent) => void; onTaskClick: (t: TaskPreview) => void }) {
   const hasP0 = card.p0 > 0;
 
   return (
-    <div className="rounded-[16px] bg-[var(--card)] border border-[var(--border)] hover:border-[var(--border2)] transition-all h-[180px] flex flex-col overflow-hidden">
-      {/* Header: name + task count — clickable to filter */}
-      <button
-        onClick={onClick}
-        className="flex items-center justify-between px-4 pt-3 pb-1 text-left w-full"
-      >
+    <div
+      onClick={onClick}
+      className="rounded-[16px] bg-[var(--card)] border border-[var(--border)] hover:border-[var(--border2)] transition-all h-[180px] flex flex-col overflow-hidden cursor-pointer"
+    >
+      {/* Header: name + task count (count acts as filter toggle) */}
+      <div className="flex items-center justify-between px-4 pt-3 pb-1 text-left w-full">
         <span className={`text-[14px] font-bold truncate ${hasP0 ? "text-[#ff453a]" : "text-[var(--accent)]"}`}>
           {card.display_name}
         </span>
-        <span className="text-[12px] text-[var(--text3)] tabular-nums shrink-0 ml-2">{card.open_tasks} open</span>
-      </button>
+        <button onClick={onFilterClick} className="text-[12px] text-[var(--text3)] tabular-nums shrink-0 ml-2 hover:text-[var(--accent)] transition-colors">{card.open_tasks} open</button>
+      </div>
 
       {/* Task previews — clickable to open modal */}
       <div className="flex-1 px-3 pb-2 overflow-hidden">
@@ -267,7 +280,9 @@ function DashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const [activeRoot, setActiveRoot] = useState(searchParams.get("tab") || "general");
+  const isDesktop = useBreakpoint(768);
+  const parentParam = searchParams.get("parent") || "general";
+  const [activeRoot, setActiveRoot] = useState(parentParam);
   const [data, setData] = useState<Data | null>(null);
   const [loading, setLoading] = useState(true);
   const [sessionsExpanded, setSessionsExpanded] = useState(false);
@@ -275,15 +290,25 @@ function DashboardContent() {
   const [urgencyTab, setUrgencyTab] = useState("ALL");
   const [selectedCard, setSelectedCard] = useState<string | null>(null);
   const [captureOpen, setCaptureOpen] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
+  const { showToast, ToastContainer } = useToast();
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [kpiFilter, setKpiFilter] = useState<KpiFilter>(null);
   const [expandedMission, setExpandedMission] = useState<string | null>(null);
   const [modalTask, setModalTask] = useState<{ task: ModalTask; subtasks: ModalTask[] } | null>(null);
 
+  // Sync activeRoot when URL ?parent= changes (e.g. sidebar navigation)
+  // Reset all view state so right panel reflects the new category
+  useEffect(() => {
+    setActiveRoot(parentParam);
+    setSelectedCard(null);
+    setUrgencyTab("ALL");
+    setSessionsExpanded(false);
+    setAllSessions([]);
+    setKpiFilter(null);
+    setExpandedMission(null);
+  }, [parentParam]);
+
   const fetchDashboard = useCallback(async (tab: string) => {
-    // Only show skeleton on first load — keep existing data visible during tab switches
-    if (!data) setLoading(true);
     try {
       const res = await fetch(`/api/dashboard?parent=${tab}`);
       const d = await res.json();
@@ -293,11 +318,12 @@ function DashboardContent() {
       setData(null);
     }
     setLoading(false);
-  }, [data]);
+  }, []);
 
   useEffect(() => { fetchDashboard(activeRoot); }, [activeRoot, fetchDashboard]);
 
   function handleTabChange(key: string) {
+    router.push(`/dashboard?parent=${key}`, { scroll: false });
     setActiveRoot(key);
     setSelectedCard(null);
     setUrgencyTab("ALL");
@@ -358,73 +384,82 @@ function DashboardContent() {
     return filteredTasks.filter((t) => !t.parent_task_id);
   }, [filteredTasks]);
 
-  // ── Handlers ──
-
-  async function handleModalUpdate(taskId: string, fields: Record<string, unknown>) {
-    try {
-      const res = await fetch(`/api/tasks/${taskId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(fields),
-      });
+  // ── Background sync helper ──
+  function bgSync(promise: Promise<Response>, successMsg: string) {
+    promise.then((res) => {
       if (!res.ok) throw new Error("Failed");
-      setToast("Updated");
-      await fetchDashboard(activeRoot);
-    } catch {
-      setToast("Failed to update");
-    }
+      showToast(successMsg);
+      fetchDashboard(activeRoot);
+    }).catch(() => {
+      showToast("Sync failed", "error");
+      fetchDashboard(activeRoot);
+    });
   }
 
-  async function handleModalDelete(taskId: string) {
-    try {
-      const res = await fetch(`/api/tasks/${taskId}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed");
-      setToast("Task deleted");
-      setModalTask(null);
-      await fetchDashboard(activeRoot);
-    } catch {
-      setToast("Failed to delete");
-    }
+  // ── Optimistic task updater ──
+  function updateTaskOptimistic(taskId: string, updater: (t: Task) => Task | null) {
+    setData((prev) => {
+      if (!prev) return prev;
+      function walk(tasks: Task[]): Task[] {
+        return tasks.reduce<Task[]>((acc, t) => {
+          if (t.id === taskId) { const u = updater(t); if (u) acc.push(u); }
+          else acc.push(t);
+          return acc;
+        }, []);
+      }
+      return {
+        ...prev,
+        tasks_by_priority: {
+          P0: walk(prev.tasks_by_priority.P0),
+          P1: walk(prev.tasks_by_priority.P1),
+          P2: walk(prev.tasks_by_priority.P2),
+          ALL: walk(prev.tasks_by_priority.ALL),
+        },
+      };
+    });
   }
 
-  async function handleTaskUpdate(taskId: string, fields: Record<string, unknown>) {
+  // ── Handlers (optimistic + background sync) ──
+
+  function handleModalUpdate(taskId: string, fields: Record<string, unknown>) {
+    updateTaskOptimistic(taskId, (t) => ({ ...t, ...fields } as Task));
+    bgSync(
+      fetch(`/api/tasks/${taskId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(fields) }),
+      "Updated"
+    );
+  }
+
+  function handleModalDelete(taskId: string) {
+    updateTaskOptimistic(taskId, () => null);
+    setModalTask(null);
+    bgSync(fetch(`/api/tasks/${taskId}`, { method: "DELETE" }), "Task deleted");
+  }
+
+  function handleTaskUpdate(taskId: string, fields: Record<string, unknown>) {
     const task = data?.tasks_by_priority.ALL.find((t) => t.id === taskId);
     if (!task) return;
-    try {
-      const res = await fetch(`/api/projects/${task.project_key}/tasks/${taskId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(fields),
-      });
-      if (!res.ok) throw new Error("Failed");
-      await fetchDashboard(activeRoot);
-    } catch {
-      setToast("Failed to update task");
-    }
+    updateTaskOptimistic(taskId, (t) => ({ ...t, ...fields } as Task));
+    bgSync(
+      fetch(`/api/projects/${task.project_key}/tasks/${taskId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(fields) }),
+      "Saved"
+    );
   }
 
-  async function handleTaskComplete(taskId: string, logMessage: string) {
+  function handleTaskComplete(taskId: string, logMessage: string) {
     const task = data?.tasks_by_priority.ALL.find((t) => t.id === taskId);
     if (!task) return;
-    try {
-      const res = await fetch(`/api/projects/${task.project_key}/tasks/${taskId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status: "completed",
-          log_entry: { type: "completion", message: logMessage },
-        }),
-      });
-      if (!res.ok) throw new Error("Failed");
-      setExpandedTaskId(null);
-      setToast("Task completed");
-      await fetchDashboard(activeRoot);
-    } catch {
-      setToast("Failed to complete task");
-    }
+    updateTaskOptimistic(taskId, (t) => ({ ...t, completed: true }));
+    setExpandedTaskId(null);
+    bgSync(
+      fetch(`/api/projects/${task.project_key}/tasks/${taskId}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "completed", log_entry: { type: "completion", message: logMessage } }),
+      }),
+      "Task completed"
+    );
   }
 
-  async function handleSectionComplete(taskId: string, currentProgress: string) {
+  function handleSectionComplete(taskId: string, currentProgress: string) {
     const match = currentProgress.match(/^(\d+)\/(\d+)$/);
     if (!match) return;
     const done = parseInt(match[1]) + 1;
@@ -432,49 +467,34 @@ function DashboardContent() {
     const newProgress = `${done}/${total}`;
     const task = data?.tasks_by_priority.ALL.find((t) => t.id === taskId);
     if (!task) return;
-    try {
-      const payload: Record<string, unknown> = {
-        progress: newProgress,
-        log_entry: { type: "section_complete", message: `Completed section ${done}/${total}`, section: done },
-      };
-      // Auto-complete if all sections done
-      if (done >= total) {
-        payload.status = "completed";
-        payload.log_entry = { type: "completion", message: `All ${total} sections completed` };
-      }
-      const res = await fetch(`/api/projects/${task.project_key}/tasks/${taskId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error("Failed");
-      if (done >= total) {
-        setExpandedTaskId(null);
-        setToast("Task completed (all sections done)");
-      } else {
-        setToast(`Section ${done}/${total} completed`);
-      }
-      await fetchDashboard(activeRoot);
-    } catch {
-      setToast("Failed to update progress");
+    const payload: Record<string, unknown> = {
+      progress: newProgress,
+      log_entry: { type: "section_complete", message: `Completed section ${done}/${total}`, section: done },
+    };
+    if (done >= total) {
+      payload.status = "completed";
+      payload.log_entry = { type: "completion", message: `All ${total} sections completed` };
     }
+    updateTaskOptimistic(taskId, (t) => ({ ...t, progress: newProgress, completed: done >= total }));
+    if (done >= total) setExpandedTaskId(null);
+    bgSync(
+      fetch(`/api/projects/${task.project_key}/tasks/${taskId}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+      }),
+      done >= total ? "All sections completed" : `Section ${done}/${total} done`
+    );
   }
 
-  async function handleAddSubtask(parentId: string, text: string) {
+  function handleAddSubtask(parentId: string, text: string) {
     const parent = data?.tasks_by_priority.ALL.find((t) => t.id === parentId);
     if (!parent) return;
-    try {
-      const res = await fetch(`/api/projects/${parent.project_key}/tasks`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+    bgSync(
+      fetch(`/api/projects/${parent.project_key}/tasks`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text, bucket: parent.bucket, parent_task_id: parentId }),
-      });
-      if (!res.ok) throw new Error("Failed");
-      setToast("Subtask added");
-      await fetchDashboard(activeRoot);
-    } catch {
-      setToast("Failed to add subtask");
-    }
+      }),
+      "Subtask added"
+    );
   }
 
   return (
@@ -523,23 +543,26 @@ function DashboardContent() {
           </div>
         )}
 
-        {/* Root tabs */}
-        <div className="flex items-center gap-1 px-6 pb-3 border-b border-[var(--border)]">
-          {ROOT_TABS.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => handleTabChange(tab.key)}
-              className={`px-4 py-2 rounded-[8px] text-[13px] font-semibold transition-all ${
-                activeRoot === tab.key
-                  ? "text-white shadow-lg"
-                  : "text-[var(--text3)] hover:text-[var(--text2)] hover:bg-[var(--card)]"
-              }`}
-              style={activeRoot === tab.key ? { backgroundColor: tab.color } : undefined}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
+        {/* Root tabs — mobile only (sidebar handles this on desktop) */}
+        {!isDesktop && (
+          <div className="flex items-center gap-1 px-6 pb-3 border-b border-[var(--border)]">
+            {ROOT_TABS.map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => handleTabChange(tab.key)}
+                className={`px-4 py-2 rounded-[8px] text-[13px] font-semibold transition-all ${
+                  activeRoot === tab.key
+                    ? "text-white shadow-lg"
+                    : "text-[var(--text3)] hover:text-[var(--text2)] hover:bg-[var(--card)]"
+                }`}
+                style={activeRoot === tab.key ? { backgroundColor: tab.color } : undefined}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        )}
+        {isDesktop && <div className="border-b border-[var(--border)]" />}
       </header>
 
       {/* ═══ BODY ═══ */}
@@ -568,71 +591,84 @@ function DashboardContent() {
 
             {!sessionsExpanded && <div className="h-px bg-[var(--border)] mx-4" />}
 
-            {/* Missions */}
-            {!sessionsExpanded && data.missions.length > 0 && (
+            {/* Missions grouped by entity */}
+            {!sessionsExpanded && data.missions_by_entity?.length > 0 && (
               <div className="shrink-0">
                 <div className="flex items-center justify-between px-4 py-2.5">
                   <h2 className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-[0.08em]">Missions</h2>
                   <span className="text-[11px] text-[var(--text3)]">{data.missions.length}</span>
                 </div>
-                <div className="px-2 space-y-1 pb-2">
-                  {data.missions.map((m) => {
-                    const isExpanded = expandedMission === m.mission;
-                    return (
-                      <div key={m.mission}>
-                        <button
-                          onClick={() => setExpandedMission(isExpanded ? null : m.mission)}
-                          className="w-full text-left px-3 py-2.5 rounded-[10px] bg-[var(--card)] transition-all hover:bg-[var(--card)]/80"
-                        >
-                          <div className="flex items-center justify-between mb-1">
-                            <div className="flex items-center gap-1.5">
-                              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className={`transition-transform shrink-0 ${isExpanded ? "rotate-90" : ""}`}>
-                                <path d="M3 1L7 5L3 9" stroke="var(--text3)" strokeWidth="1.5" strokeLinecap="round" />
-                              </svg>
-                              <span className="text-[13px] font-semibold text-[var(--text)]">{m.mission}</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {m.p0 > 0 && <span className="w-[6px] h-[6px] rounded-full bg-[#ff453a]" />}
-                              <span className="text-[11px] text-[var(--text3)] tabular-nums">{m.task_count}</span>
-                            </div>
-                          </div>
-                          {!isExpanded && (
-                            <>
-                              <p className="text-[11px] text-[var(--text3)] line-clamp-1 pl-[18px]">{m.latest_task}</p>
-                              <p className="text-[10px] text-[var(--text3)] mt-0.5 opacity-60 pl-[18px]">
-                                {new Date(m.latest_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                                {" · "}
-                                {new Date(m.latest_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
-                              </p>
-                            </>
-                          )}
-                        </button>
-                        {isExpanded && (
-                          <div className="mt-1 space-y-0.5 pl-2">
-                            {m.tasks.slice(0, 5).map((t) => (
-                              <div key={t.id} className="flex items-center gap-2 px-3 py-1.5 rounded-[8px] hover:bg-[var(--card)]/50">
-                                {t.priority && (
-                                  <span className="w-[6px] h-[6px] rounded-full shrink-0" style={{ backgroundColor: t.priority === "P0" ? "#ff453a" : t.priority === "P1" ? "#ff9f0a" : "#ffd60a" }} />
-                                )}
-                                {t.task_code && <span className="text-[10px] font-mono text-[var(--accent)] shrink-0">{t.task_code}</span>}
-                                <span className="text-[12px] text-[var(--text2)] line-clamp-1 flex-1">{t.text}</span>
-                                {t.surface && <span className="text-[9px] px-1.5 py-0.5 rounded bg-[var(--card)] text-[var(--text3)] shrink-0">{t.surface}</span>}
-                              </div>
-                            ))}
-                            {m.task_count > 5 && (
-                              <p className="text-[10px] text-[var(--text3)] opacity-60 px-3 py-1">+{m.task_count - 5} more</p>
-                            )}
-                            <button
-                              onClick={() => router.push(`/mission/${encodeURIComponent(m.mission)}`)}
-                              className="text-[11px] text-[var(--accent)] hover:underline px-3 py-1.5"
-                            >
-                              View all →
-                            </button>
-                          </div>
-                        )}
+                <div className="px-2 space-y-2 pb-2">
+                  {data.missions_by_entity.map((entity) => (
+                    <div key={entity.entity_key}>
+                      {/* Entity header */}
+                      <div className="flex items-center justify-between px-3 py-1.5">
+                        <span className="text-[11px] font-semibold text-[var(--accent)] uppercase tracking-[0.04em]">{entity.entity_name}</span>
+                        <span className="text-[10px] text-[var(--text3)] tabular-nums">{entity.total_mission_tasks} tasks</span>
                       </div>
-                    );
-                  })}
+                      {/* Missions under this entity */}
+                      <div className="space-y-1">
+                        {entity.missions.map((m) => {
+                          const isExpanded = expandedMission === m.mission;
+                          return (
+                            <div key={m.mission}>
+                              <button
+                                onClick={() => setExpandedMission(isExpanded ? null : m.mission)}
+                                className="w-full text-left px-3 py-2 rounded-[10px] bg-[var(--card)] transition-all hover:bg-[var(--card)]/80 ml-1"
+                                style={{ width: "calc(100% - 4px)" }}
+                              >
+                                <div className="flex items-center justify-between mb-0.5">
+                                  <div className="flex items-center gap-1.5">
+                                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className={`transition-transform shrink-0 ${isExpanded ? "rotate-90" : ""}`}>
+                                      <path d="M3 1L7 5L3 9" stroke="var(--text3)" strokeWidth="1.5" strokeLinecap="round" />
+                                    </svg>
+                                    <span className="text-[13px] font-semibold text-[var(--text)]">{m.mission}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    {m.p0 > 0 && <span className="w-[6px] h-[6px] rounded-full bg-[#ff453a]" />}
+                                    <span className="text-[11px] text-[var(--text3)] tabular-nums">{m.task_count}</span>
+                                  </div>
+                                </div>
+                                {!isExpanded && (
+                                  <>
+                                    <p className="text-[11px] text-[var(--text3)] line-clamp-1 pl-[18px]">{m.latest_task}</p>
+                                    <p className="text-[10px] text-[var(--text3)] mt-0.5 opacity-60 pl-[18px]">
+                                      {new Date(m.latest_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                                      {" · "}
+                                      {new Date(m.latest_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                                    </p>
+                                  </>
+                                )}
+                              </button>
+                              {isExpanded && (
+                                <div className="mt-1 space-y-0.5 pl-3">
+                                  {m.tasks.slice(0, 5).map((t) => (
+                                    <div key={t.id} className="flex items-center gap-2 px-3 py-1.5 rounded-[8px] hover:bg-[var(--card)]/50">
+                                      {t.priority && (
+                                        <span className="w-[6px] h-[6px] rounded-full shrink-0" style={{ backgroundColor: t.priority === "P0" ? "#ff453a" : t.priority === "P1" ? "#ff9f0a" : "#ffd60a" }} />
+                                      )}
+                                      {t.task_code && <span className="text-[10px] font-mono text-[var(--accent)] shrink-0">{t.task_code}</span>}
+                                      <span className="text-[12px] text-[var(--text2)] line-clamp-1 flex-1">{t.text}</span>
+                                      {t.surface && <span className="text-[9px] px-1.5 py-0.5 rounded bg-[var(--card)] text-[var(--text3)] shrink-0">{t.surface}</span>}
+                                    </div>
+                                  ))}
+                                  {m.task_count > 5 && (
+                                    <p className="text-[10px] text-[var(--text3)] opacity-60 px-3 py-1">+{m.task_count - 5} more</p>
+                                  )}
+                                  <button
+                                    onClick={() => router.push(`/mission/${encodeURIComponent(m.mission)}`)}
+                                    className="text-[11px] text-[var(--accent)] hover:underline px-3 py-1.5"
+                                  >
+                                    View all →
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
                 </div>
                 <div className="h-px bg-[var(--border)] mx-4" />
               </div>
@@ -657,12 +693,13 @@ function DashboardContent() {
                       key={card.child_key}
                       card={card}
                       onClick={() => {
-                        if (selectedCard === card.child_key) {
-                          if (card.is_leaf) router.push(`/project/${card.child_key}`);
-                          else setSelectedCard(null);
-                        } else {
-                          setSelectedCard(card.child_key);
-                        }
+                        // Single click: navigate to entity project page
+                        router.push(`/project/${card.child_key}`);
+                      }}
+                      onFilterClick={(e) => {
+                        e.stopPropagation();
+                        if (selectedCard === card.child_key) setSelectedCard(null);
+                        else setSelectedCard(card.child_key);
                       }}
                       onTaskClick={(t) => setModalTask({ task: { ...t, description: null, version: null, completed: false, log: null } as ModalTask, subtasks: [] })}
                     />
@@ -783,29 +820,27 @@ function DashboardContent() {
           onUpdate={handleModalUpdate}
           onDelete={handleModalDelete}
           onAddSubtask={async (parentId, text) => {
-            try {
-              const parentTask = data?.tasks_by_priority.ALL.find((t) => t.id === parentId);
-              if (!parentTask) return;
-              const res = await fetch(`/api/projects/${parentTask.project_key}/tasks`, {
+            const parentTask = data?.tasks_by_priority.ALL.find((t) => t.id === parentId);
+            if (!parentTask) return;
+            bgSync(
+              fetch(`/api/projects/${parentTask.project_key}/tasks`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ text, bucket: parentTask.bucket, parent_task_id: parentId }),
-              });
-              if (!res.ok) throw new Error("Failed");
-              setToast("Subtask added");
-              await fetchDashboard(activeRoot);
-            } catch { setToast("Failed to add subtask"); }
+              }),
+              "Subtask added"
+            );
           }}
         />
       )}
 
-      {toast && <Toast message={toast} onDismiss={() => setToast(null)} />}
+      <ToastContainer />
       <Fab onPress={() => setCaptureOpen(true)} />
       <QuickCaptureSheet
         open={captureOpen}
         onClose={() => setCaptureOpen(false)}
         projects={leafProjects}
-        onSubmitted={() => { fetchDashboard(activeRoot); setToast("Task added"); }}
+        onSubmitted={() => { fetchDashboard(activeRoot); showToast("Task added"); }}
       />
     </div>
   );

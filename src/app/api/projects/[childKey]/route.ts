@@ -89,29 +89,55 @@ export async function GET(
   const { childKey } = await params;
 
   try {
-    const { data: project, error: projError } = await supabase
-      .from("angelo_projects")
-      .select("*")
-      .eq("child_key", childKey)
-      .single();
+    // Fetch project + all projects (for child detection)
+    const [projectResult, allProjectsResult] = await Promise.all([
+      supabase.from("angelo_projects").select("*").eq("child_key", childKey).single(),
+      supabase.from("angelo_projects").select("child_key, parent_key, display_name, status").neq("status", "ARCHIVED"),
+    ]);
 
-    if (projError || !project) {
+    const project = projectResult.data;
+    if (projectResult.error || !project) {
       return NextResponse.json(
         { error: { code: "404", type: "not_found", message: "Project not found" } },
         { status: 404 }
       );
     }
 
-    const { data: tasks, error: taskError } = await supabase
-      .from("angelo_tasks")
-      .select("*")
-      .eq("project_key", childKey)
-      .order("sort_order")
-      .order("created_at");
+    const allProjects = allProjectsResult.data || [];
+    const directChildren = allProjects.filter((p) => p.parent_key === childKey);
+    const is_leaf = directChildren.length === 0;
 
-    if (taskError) throw taskError;
+    // Collect all descendant keys (for non-leaf: include self + all descendants)
+    function getDescendantKeys(key: string): string[] {
+      const children = allProjects.filter((p) => p.parent_key === key);
+      if (children.length === 0) return [key];
+      const keys: string[] = [key];
+      for (const child of children) {
+        keys.push(...getDescendantKeys(child.child_key));
+      }
+      return keys;
+    }
+    const allKeys = is_leaf ? [childKey] : getDescendantKeys(childKey);
 
-    const allTasks = (tasks || []) as TaskRow[];
+    // Parallel: tasks + session logs
+    const [tasksResult, sessionsResult] = await Promise.all([
+      supabase
+        .from("angelo_tasks")
+        .select("*")
+        .in("project_key", allKeys)
+        .order("sort_order")
+        .order("created_at"),
+      supabase
+        .from("angelo_session_logs")
+        .select("id, session_date, title, surface, summary, project_key")
+        .in("project_key", allKeys)
+        .order("session_date", { ascending: false })
+        .limit(5),
+    ]);
+
+    if (tasksResult.error) throw tasksResult.error;
+
+    const allTasks = (tasksResult.data || []) as TaskRow[];
     const nested = nestTasks(allTasks);
 
     const grouped = {
@@ -121,19 +147,38 @@ export async function GET(
       completed: nested.filter((t) => t.completed),
     };
 
-    // Fetch last 3 session logs
-    let session_logs: { id: string; session_date: string; title: string | null; surface: string | null; summary: string | null }[] = [];
-    try {
-      const { data: logs } = await supabase
-        .from("angelo_session_logs")
-        .select("id, session_date, title, surface, summary")
-        .eq("project_key", childKey)
-        .order("session_date", { ascending: false })
-        .limit(3);
-      if (logs) session_logs = logs;
-    } catch {
-      // Session logs table may not exist yet — gracefully skip
+    // Missions: group tasks by mission field
+    const missionMap = new Map<string, {
+      mission: string;
+      task_count: number;
+      p0: number; p1: number; p2: number;
+      tasks: { id: string; text: string; priority: string | null; task_code: string | null; project_key: string; bucket: string; completed: boolean; updated_at: string }[];
+    }>();
+    for (const t of allTasks) {
+      if (!t.mission || t.completed) continue;
+      const existing = missionMap.get(t.mission);
+      const preview = { id: t.id, text: t.text, priority: t.priority, task_code: t.task_code, project_key: t.project_key, bucket: t.bucket, completed: t.completed, updated_at: t.updated_at };
+      if (!existing) {
+        missionMap.set(t.mission, {
+          mission: t.mission, task_count: 1,
+          p0: t.priority === "P0" ? 1 : 0, p1: t.priority === "P1" ? 1 : 0, p2: t.priority === "P2" ? 1 : 0,
+          tasks: [preview],
+        });
+      } else {
+        existing.task_count++;
+        if (t.priority === "P0") existing.p0++;
+        if (t.priority === "P1") existing.p1++;
+        if (t.priority === "P2") existing.p2++;
+        existing.tasks.push(preview);
+      }
     }
+    const missions = Array.from(missionMap.values()).sort((a, b) => b.task_count - a.task_count);
+
+    // Children info for non-leaf entities
+    const children_info = directChildren.map((c) => {
+      const cTasks = allTasks.filter((t) => t.project_key === c.child_key && !t.completed);
+      return { child_key: c.child_key, display_name: c.display_name, status: c.status, open_tasks: cTasks.length };
+    });
 
     return NextResponse.json({
       child_key: project.child_key,
@@ -144,8 +189,11 @@ export async function GET(
       surface: project.surface || null,
       last_session_date: project.last_session_date,
       next_action: project.next_action || null,
+      is_leaf,
       tasks: grouped,
-      session_logs,
+      missions,
+      children_info,
+      session_logs: sessionsResult.data || [],
     });
   } catch (err) {
     console.error("Project detail error:", err);
