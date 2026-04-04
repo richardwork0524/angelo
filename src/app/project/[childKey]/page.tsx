@@ -12,6 +12,8 @@ import { useToast } from "@/components/toast";
 import { ProjectCard } from "@/components/project-card";
 import { SessionLogList } from "@/components/session-log-list";
 import { type DetailTask } from "@/components/task/task-detail";
+import { Fab } from "@/components/fab";
+import { QuickCaptureSheet } from "@/components/quick-capture-sheet";
 
 const TaskDetail = dynamic(() => import("@/components/task/task-detail").then((m) => ({ default: m.TaskDetail })), { ssr: false });
 
@@ -94,6 +96,8 @@ export default function ProjectDetailPage() {
   const [moveSheet, setMoveSheet] = useState<{ taskId: string; currentBucket: string } | null>(null);
   const [selectedTask, setSelectedTask] = useState<NestedTask | null>(null);
   const [expandedMission, setExpandedMission] = useState<string | null>(null);
+  const [captureOpen, setCaptureOpen] = useState(false);
+  const [activeBucket, setActiveBucket] = useState<"THIS_WEEK" | "THIS_MONTH" | "PARKED">("THIS_WEEK");
   const { showToast, ToastContainer } = useToast();
 
   const fetchProject = useCallback(async () => {
@@ -111,6 +115,13 @@ export default function ProjectDetailPage() {
   }, [childKey]);
 
   useEffect(() => { fetchProject(); }, [fetchProject]);
+
+  // Listen for quick-capture event from BottomNav
+  useEffect(() => {
+    const open = () => setCaptureOpen(true);
+    window.addEventListener('quick-capture', open);
+    return () => window.removeEventListener('quick-capture', open);
+  }, []);
 
   // ── Helper: optimistically update a task in local state ──
   function updateTaskInState(taskId: string, updater: (t: NestedTask) => NestedTask | null) {
@@ -433,36 +444,65 @@ export default function ProjectDetailPage() {
               <EmptyState message="No tasks yet. Add your first task below." />
             ) : (
               <div className="px-4 py-3">
-                <BucketSection
-                  title="THIS WEEK"
-                  tasks={project.tasks.this_week}
-                  totalInBucket={project.tasks.this_week.length}
-                  colorVar="var(--accent)"
-                  onToggle={handleToggleTask}
-                  onLongPress={(id) => setMoveSheet({ taskId: id, currentBucket: "THIS_WEEK" })}
-                  onUpdateText={handleUpdateText}
-                  onOpen={(task) => setSelectedTask(task)}
-                />
-                <BucketSection
-                  title="THIS MONTH"
-                  tasks={project.tasks.this_month}
-                  totalInBucket={project.tasks.this_month.length}
-                  colorVar="var(--purple)"
-                  onToggle={handleToggleTask}
-                  onLongPress={(id) => setMoveSheet({ taskId: id, currentBucket: "THIS_MONTH" })}
-                  onUpdateText={handleUpdateText}
-                  onOpen={(task) => setSelectedTask(task)}
-                />
-                <BucketSection
-                  title="PARKED"
-                  tasks={project.tasks.parked}
-                  totalInBucket={project.tasks.parked.length}
-                  colorVar="var(--text3)"
-                  onToggle={handleToggleTask}
-                  onLongPress={(id) => setMoveSheet({ taskId: id, currentBucket: "PARKED" })}
-                  onUpdateText={handleUpdateText}
-                  onOpen={(task) => setSelectedTask(task)}
-                />
+                {/* Bucket filter tabs */}
+                <div className="flex gap-2 mb-4">
+                  {([
+                    { key: "THIS_WEEK" as const, label: "Week", count: project.tasks.this_week.length, color: "var(--accent)" },
+                    { key: "THIS_MONTH" as const, label: "Month", count: project.tasks.this_month.length, color: "var(--purple)" },
+                    { key: "PARKED" as const, label: "Parked", count: project.tasks.parked.length, color: "var(--text3)" },
+                  ]).map((tab) => (
+                    <button
+                      key={tab.key}
+                      onClick={() => setActiveBucket(tab.key)}
+                      className={`flex-1 py-2 rounded-full text-[13px] font-medium transition-colors min-h-[44px] ${
+                        activeBucket === tab.key
+                          ? "text-white"
+                          : "bg-[var(--card)] text-[var(--text2)] border border-[var(--border)]"
+                      }`}
+                      style={activeBucket === tab.key ? { backgroundColor: tab.color } : undefined}
+                    >
+                      {tab.label} ({tab.count})
+                    </button>
+                  ))}
+                </div>
+
+                {/* Active bucket content */}
+                {activeBucket === "THIS_WEEK" && (
+                  <BucketSection
+                    title="THIS WEEK"
+                    tasks={project.tasks.this_week}
+                    totalInBucket={project.tasks.this_week.length}
+                    colorVar="var(--accent)"
+                    onToggle={handleToggleTask}
+                    onLongPress={(id) => setMoveSheet({ taskId: id, currentBucket: "THIS_WEEK" })}
+                    onUpdateText={handleUpdateText}
+                    onOpen={(task) => setSelectedTask(task)}
+                  />
+                )}
+                {activeBucket === "THIS_MONTH" && (
+                  <BucketSection
+                    title="THIS MONTH"
+                    tasks={project.tasks.this_month}
+                    totalInBucket={project.tasks.this_month.length}
+                    colorVar="var(--purple)"
+                    onToggle={handleToggleTask}
+                    onLongPress={(id) => setMoveSheet({ taskId: id, currentBucket: "THIS_MONTH" })}
+                    onUpdateText={handleUpdateText}
+                    onOpen={(task) => setSelectedTask(task)}
+                  />
+                )}
+                {activeBucket === "PARKED" && (
+                  <BucketSection
+                    title="PARKED"
+                    tasks={project.tasks.parked}
+                    totalInBucket={project.tasks.parked.length}
+                    colorVar="var(--text3)"
+                    onToggle={handleToggleTask}
+                    onLongPress={(id) => setMoveSheet({ taskId: id, currentBucket: "PARKED" })}
+                    onUpdateText={handleUpdateText}
+                    onOpen={(task) => setSelectedTask(task)}
+                  />
+                )}
 
                 {project.tasks.completed.length > 0 && (
                   <div className="mt-4">
@@ -519,6 +559,14 @@ export default function ProjectDetailPage() {
           }}
         />
       )}
+
+      <Fab onPress={() => setCaptureOpen(true)} />
+      <QuickCaptureSheet
+        open={captureOpen}
+        onClose={() => setCaptureOpen(false)}
+        projects={project ? [{ child_key: project.child_key, display_name: project.display_name }] : []}
+        onSubmitted={() => { fetchProject(); showToast("Task added"); }}
+      />
 
       <ToastContainer />
     </div>
@@ -632,8 +680,8 @@ function TaskRow({
         onTouchCancel={() => { if (longPressTimer) clearTimeout(longPressTimer); }}
         onContextMenu={(e) => { e.preventDefault(); onLongPress?.(); }}
       >
-        {/* Sub-task expand toggle */}
-        {task.sub_tasks.length > 0 && (
+        {/* Sub-task expand toggle (or spacer for alignment) */}
+        {task.sub_tasks.length > 0 ? (
           <button
             onClick={() => setExpanded(!expanded)}
             className="mt-1 text-[var(--text3)] shrink-0 w-[18px] h-[18px] flex items-center justify-center"
@@ -642,7 +690,9 @@ function TaskRow({
               <path d="M3 1L7 5L3 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
             </svg>
           </button>
-        )}
+        ) : depth > 0 ? (
+          <span className="shrink-0 w-[18px]" />
+        ) : null}
 
         {/* Checkbox */}
         <button

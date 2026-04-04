@@ -82,7 +82,7 @@ export function BottomNav({ onCapture }: BottomNavProps) {
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-30 bg-[var(--surface)]/95 backdrop-blur-[20px] border-t border-[var(--border)]"
+      className="fixed bottom-0 left-0 right-0 z-30 flex items-center justify-around bg-[var(--surface)]/95 backdrop-blur-[20px] border-t border-[var(--border)]"
       style={{ paddingBottom: 'var(--safe-b)' }}
     >
       <div className="relative flex items-center">
