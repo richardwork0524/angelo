@@ -179,7 +179,7 @@ export default function TasksPage() {
   }
 
   return (
-    <div className="flex flex-col overflow-x-hidden">
+    <div className="flex flex-col">
       <StickyHeader title="Tasks" />
 
       {/* Filter tabs */}

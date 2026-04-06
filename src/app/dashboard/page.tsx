@@ -328,6 +328,7 @@ function DashboardContent() {
   }, []);
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [kpiFilter, setKpiFilter] = useState<KpiFilter>(null);
+  const [mobileSection, setMobileSection] = useState<"projects" | "tasks" | "activity">("projects");
   const [expandedMission, setExpandedMission] = useState<string | null>(null);
   const [detailTask, setDetailTask] = useState<{ task: DetailTask; subtasks: DetailTask[] } | null>(null);
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
@@ -647,22 +648,50 @@ function DashboardContent() {
 
         {/* Root tabs — mobile only (sidebar handles this on desktop) */}
         {!isDesktop && (
-          <div className="flex items-center gap-1 px-6 pb-3 border-b border-[var(--border)]">
-            {ROOT_TABS.map((tab) => (
-              <button
-                key={tab.key}
-                onClick={() => handleTabChange(tab.key)}
-                className={`px-4 py-2 rounded-[8px] text-[13px] font-semibold transition-all ${
-                  activeRoot === tab.key
-                    ? "text-white shadow-lg"
-                    : "text-[var(--text3)] hover:text-[var(--text2)] hover:bg-[var(--card)]"
-                }`}
-                style={activeRoot === tab.key ? { backgroundColor: tab.color } : undefined}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+          <>
+            <div className="flex items-center gap-1 px-6 pb-2">
+              {ROOT_TABS.map((tab) => (
+                <button
+                  key={tab.key}
+                  onClick={() => handleTabChange(tab.key)}
+                  className={`px-4 py-2 rounded-[8px] text-[13px] font-semibold transition-all ${
+                    activeRoot === tab.key
+                      ? "text-white shadow-lg"
+                      : "text-[var(--text3)] hover:text-[var(--text2)] hover:bg-[var(--card)]"
+                  }`}
+                  style={activeRoot === tab.key ? { backgroundColor: tab.color } : undefined}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            {/* Mobile section tabs */}
+            <div className="flex items-center border-b border-[var(--border)]">
+              {([
+                { key: "projects" as const, label: "Projects", count: data?.cards.length },
+                { key: "tasks" as const, label: "Tasks", count: data?.stats.open },
+                { key: "activity" as const, label: "Activity", count: data?.sessions.length },
+              ]).map((s) => (
+                <button
+                  key={s.key}
+                  onClick={() => setMobileSection(s.key)}
+                  className={`flex-1 py-2.5 text-center text-[13px] font-semibold transition-all relative ${
+                    mobileSection === s.key ? "text-[var(--accent)]" : "text-[var(--text3)]"
+                  }`}
+                >
+                  {s.label}
+                  {s.count != null && s.count > 0 && (
+                    <span className={`ml-1 text-[10px] tabular-nums ${mobileSection === s.key ? "text-[var(--accent)]" : "text-[var(--text3)] opacity-60"}`}>
+                      {s.count}
+                    </span>
+                  )}
+                  {mobileSection === s.key && (
+                    <span className="absolute bottom-0 left-1/4 right-1/4 h-[2px] bg-[var(--accent)] rounded-full" />
+                  )}
+                </button>
+              ))}
+            </div>
+          </>
         )}
         {isDesktop && <div className="border-b border-[var(--border)]" />}
       </header>
@@ -676,9 +705,10 @@ function DashboardContent() {
         </div>
       ) : (
         <div className={`flex-1 ${isDesktop ? "flex min-h-0 overflow-hidden" : ""}`}>
-          {/* ── LEFT: Card grid + Sessions ── */}
-          <div className={`${isDesktop ? "w-[420px] shrink-0 border-r border-[var(--border)] overflow-hidden" : ""} flex flex-col`}>
-            {/* Sessions (collapsible) */}
+          {/* ── LEFT: Card grid + Sessions ── (desktop: always visible; mobile: section-driven) */}
+          <div className={`${isDesktop ? "w-[420px] shrink-0 border-r border-[var(--border)] overflow-hidden" : mobileSection === "tasks" ? "hidden" : ""} flex flex-col`}>
+            {/* Sessions (collapsible) — desktop: always show; mobile: only in "activity" tab */}
+            {(isDesktop || mobileSection === "activity") && (
             <div className={sessionsExpanded ? "flex-1 flex flex-col overflow-hidden" : "shrink-0"}>
               <div className="flex items-center justify-between px-4 py-2.5">
                 <h2 className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-[0.08em]">Sessions</h2>
@@ -704,15 +734,16 @@ function DashboardContent() {
                 )}
               </div>
             </div>
+            )}
 
-            {!sessionsExpanded && <div className="h-px bg-[var(--border)] mx-4" />}
+            {(isDesktop || mobileSection === "activity") && !sessionsExpanded && <div className="h-px bg-[var(--border)] mx-4" />}
 
             {/* Scrollable area: missions + cards */}
             {!sessionsExpanded && (
             <div className="flex-1 overflow-y-auto min-h-0">
 
-            {/* Missions grouped by entity */}
-            {data.missions_by_entity?.length > 0 && (
+            {/* Missions grouped by entity — desktop: always; mobile: only in "activity" tab */}
+            {(isDesktop || mobileSection === "activity") && data.missions_by_entity?.length > 0 && (
               <div className="shrink-0">
                 <div className="flex items-center justify-between px-4 py-2.5">
                   <h2 className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-[0.08em]">Missions</h2>
@@ -814,7 +845,8 @@ function DashboardContent() {
               </div>
             )}
 
-            {/* 2-column card grid (reference-inspired) */}
+            {/* 2-column card grid (reference-inspired) — desktop: always; mobile: only "projects" */}
+            {(isDesktop || mobileSection === "projects") && (
               <div className="px-4 py-3">
                 <div className="flex items-center justify-between mb-3">
                   <h2 className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-[0.08em]">
@@ -852,10 +884,10 @@ function DashboardContent() {
             )}
           </div>
 
-          {/* ── RIGHT: Task list ── */}
-          <div className={`flex-1 flex flex-col ${isDesktop ? "min-h-0 overflow-hidden" : "mt-2 border-t border-[var(--border)]"}`}>
+          {/* ── RIGHT: Task list ── (desktop: always; mobile: only "tasks" tab) */}
+          <div className={`flex-1 flex flex-col ${isDesktop ? "min-h-0 overflow-hidden" : mobileSection === "tasks" ? "" : "hidden"}`}>
             {/* Urgency tabs */}
-            <div className="shrink-0 flex items-center gap-1 px-6 py-3 border-b border-[var(--border)]">
+            <div className="shrink-0 flex items-center gap-1 px-4 py-2.5 border-b border-[var(--border)] overflow-x-auto">
               {URGENCY_TABS.map((tab) => {
                 const count = tab.key === "ALL"
                   ? filteredTasks.length
@@ -865,13 +897,13 @@ function DashboardContent() {
                   <button
                     key={tab.key}
                     onClick={() => setUrgencyTab(tab.key)}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-[8px] text-[13px] font-semibold transition-all ${
-                      isActive ? "bg-[var(--card)] text-[var(--text)] shadow-sm" : "text-[var(--text3)] hover:text-[var(--text2)]"
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-[12px] font-semibold transition-all shrink-0 ${
+                      isActive ? "bg-[var(--accent)] text-white" : "bg-[var(--card)] text-[var(--text3)]"
                     }`}
                   >
-                    {tab.color && <span className="w-[8px] h-[8px] rounded-full" style={{ backgroundColor: tab.color }} />}
+                    {tab.color && !isActive && <span className="w-[6px] h-[6px] rounded-full" style={{ backgroundColor: tab.color }} />}
                     {tab.label}
-                    <span className={`text-[11px] tabular-nums ${isActive ? "text-[var(--text2)]" : "text-[var(--text3)]"}`}>{count}</span>
+                    <span className={`text-[10px] tabular-nums ${isActive ? "text-white/70" : "text-[var(--text3)]"}`}>{count}</span>
                   </button>
                 );
               })}

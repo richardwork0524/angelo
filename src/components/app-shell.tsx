@@ -31,8 +31,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex flex-col h-[100dvh] overflow-hidden bg-[var(--bg)]">
-      <main className="flex-1 overflow-y-auto min-h-0" style={{ paddingBottom: 'calc(60px + var(--safe-b))' }}>
+    <div className="flex flex-col h-[100dvh] overflow-hidden bg-[var(--bg)] max-w-[100vw]">
+      <main className="flex-1 overflow-y-auto overflow-x-hidden min-h-0" style={{ paddingBottom: 'calc(60px + var(--safe-b))' }}>
         {children}
       </main>
       <BottomNav onCapture={handleCapture} />
