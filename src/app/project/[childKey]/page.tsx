@@ -477,30 +477,33 @@ export default function ProjectDetailPage() {
             {totalAll === 0 ? (
               <EmptyState message="No tasks yet. Add your first task below." />
             ) : (
-              <div className="px-4 py-3">
-                {/* Bucket filter tabs */}
-                <div className="flex gap-2 mb-4">
-                  {([
-                    { key: "THIS_WEEK" as const, label: "Week", count: project.tasks.this_week.length, color: "var(--accent)" },
-                    { key: "THIS_MONTH" as const, label: "Month", count: project.tasks.this_month.length, color: "var(--purple)" },
-                    { key: "PARKED" as const, label: "Parked", count: project.tasks.parked.length, color: "var(--text3)" },
-                  ]).map((tab) => (
-                    <button
-                      key={tab.key}
-                      onClick={() => setActiveBucket(tab.key)}
-                      className={`flex-1 py-2 rounded-full text-[13px] font-medium transition-colors min-h-[44px] ${
-                        activeBucket === tab.key
-                          ? "text-white"
-                          : "bg-[var(--card)] text-[var(--text2)] border border-[var(--border)]"
-                      }`}
-                      style={activeBucket === tab.key ? { backgroundColor: tab.color } : undefined}
-                    >
-                      {tab.label} ({tab.count})
-                    </button>
-                  ))}
+              <div>
+                {/* Bucket filter tabs — sticky below header */}
+                <div className="sticky top-0 z-10 bg-[var(--bg)] px-4 pt-3 pb-2">
+                  <div className="flex gap-2">
+                    {([
+                      { key: "THIS_WEEK" as const, label: "Week", count: project.tasks.this_week.length, color: "var(--accent)" },
+                      { key: "THIS_MONTH" as const, label: "Month", count: project.tasks.this_month.length, color: "var(--purple)" },
+                      { key: "PARKED" as const, label: "Parked", count: project.tasks.parked.length, color: "var(--text3)" },
+                    ]).map((tab) => (
+                      <button
+                        key={tab.key}
+                        onClick={() => setActiveBucket(tab.key)}
+                        className={`flex-1 py-2 rounded-full text-[13px] font-medium transition-colors min-h-[44px] ${
+                          activeBucket === tab.key
+                            ? "text-white"
+                            : "bg-[var(--card)] text-[var(--text2)] border border-[var(--border)]"
+                        }`}
+                        style={activeBucket === tab.key ? { backgroundColor: tab.color } : undefined}
+                      >
+                        {tab.label} ({tab.count})
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 {/* Active bucket content */}
+                <div className="px-4 pb-3">
                 {activeBucket === "THIS_WEEK" && (
                   <BucketSection
                     title="THIS WEEK"
@@ -559,6 +562,7 @@ export default function ProjectDetailPage() {
                     )}
                   </div>
                 )}
+                </div>
               </div>
             )}
           </>
