@@ -29,7 +29,7 @@ export default function SessionPage() {
 
   if (loading) {
     return (
-      <div className="flex flex-col min-h-screen bg-[var(--bg)]">
+      <div className="flex flex-col h-full min-h-0 bg-[var(--bg)]">
         <StickyHeader title="Session" showBack />
         <main style={{ maxWidth: 960, margin: "0 auto", padding: "24px 16px", color: "var(--text3)" }}>
           Loading...
@@ -40,7 +40,7 @@ export default function SessionPage() {
 
   if (!session) {
     return (
-      <div className="flex flex-col min-h-screen bg-[var(--bg)]">
+      <div className="flex flex-col h-full min-h-0 bg-[var(--bg)]">
         <StickyHeader title="Session" showBack />
         <main style={{ maxWidth: 960, margin: "0 auto", padding: "24px 16px" }}>
           <p style={{ color: "var(--text3)" }}>Session not found.</p>
@@ -58,7 +58,7 @@ export default function SessionPage() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-[var(--bg)]">
+    <div className="flex flex-col h-full min-h-0 bg-[var(--bg)]">
       <StickyHeader title={session.title || "Session"} showBack />
       <main style={{ maxWidth: 960, margin: "0 auto", padding: "24px 16px", width: "100%" }}>
         <div className="flex items-center gap-2 mb-1">

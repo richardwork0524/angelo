@@ -339,7 +339,7 @@ export default function ProjectDetailPage() {
   const totalAll = totalOpen + totalDone;
 
   return (
-    <div className="flex flex-col min-h-screen bg-[var(--bg)] pb-16">
+    <div className="flex flex-col h-full min-h-0 bg-[var(--bg)]">
       <StickyHeader title={project?.display_name || "Loading..."} showBack />
 
       {error && <ErrorBanner message={error} onRetry={fetchProject} />}

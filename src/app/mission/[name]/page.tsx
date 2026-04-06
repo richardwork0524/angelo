@@ -97,7 +97,7 @@ export default function MissionDetailPage() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-[var(--bg)] pb-16">
+    <div className="flex flex-col h-full min-h-0 bg-[var(--bg)]">
       <StickyHeader title={missionName} showBack />
 
       {error && <ErrorBanner message={error} onRetry={fetchMission} />}

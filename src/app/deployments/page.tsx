@@ -21,7 +21,7 @@ export default function DeploymentsPage() {
   }, []);
 
   return (
-    <div className="flex flex-col min-h-screen bg-[var(--bg)]">
+    <div className="flex flex-col h-full min-h-0 bg-[var(--bg)]">
       <StickyHeader title="Deployments" showBack />
       <main style={{ maxWidth: 960, margin: "0 auto", padding: "24px 16px", width: "100%" }}>
         <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 4 }}>Deployments</h1>
