@@ -11,9 +11,9 @@ interface SessionLog {
 }
 
 const SURFACE_COLORS: Record<string, string> = {
-  CHAT: 'var(--purple)',
-  CODE: 'var(--green)',
-  COWORK: 'var(--accent)',
+  CODE: 'var(--accent)',
+  CHAT: 'var(--green)',
+  COWORK: 'var(--purple)',
   MOBILE: 'var(--orange)',
 };
 

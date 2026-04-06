@@ -1,9 +1,9 @@
 'use client';
 
 const SURFACE_STYLES: Record<string, { bg: string; text: string }> = {
-  CHAT:    { bg: 'var(--purple-dim)', text: 'var(--purple)' },
-  CODE:    { bg: 'var(--green-dim)',  text: 'var(--green)' },
-  COWORK:  { bg: 'var(--accent-dim)', text: 'var(--accent)' },
+  CODE:    { bg: 'var(--accent-dim)', text: 'var(--accent)' },
+  CHAT:    { bg: 'var(--green-dim)',  text: 'var(--green)' },
+  COWORK:  { bg: 'var(--purple-dim)', text: 'var(--purple)' },
   MOBILE:  { bg: 'var(--orange-dim)', text: 'var(--orange)' },
 };
 

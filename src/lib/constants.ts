@@ -10,6 +10,24 @@ export const SURFACE_COLORS: Record<string, string> = {
   CODE: "var(--accent)",
   CHAT: "var(--green)",
   COWORK: "var(--purple)",
+  MOBILE: "var(--orange)",
+};
+
+export const SURFACE_DIM_COLORS: Record<string, string> = {
+  CODE: "var(--accent-dim)",
+  CHAT: "var(--green-dim)",
+  COWORK: "var(--purple-dim)",
+  MOBILE: "var(--orange-dim)",
+};
+
+export const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
+  ACTIVE:   { bg: "var(--green-dim)",   text: "var(--green)" },
+  DEPLOYED: { bg: "var(--green-dim)",   text: "var(--green)" },
+  BUILDING: { bg: "var(--accent-dim)",  text: "var(--accent)" },
+  PLANNING: { bg: "var(--purple-dim)",  text: "var(--purple)" },
+  TESTING:  { bg: "var(--yellow-dim)",  text: "var(--yellow)" },
+  BLOCKED:  { bg: "var(--red-dim)",     text: "var(--red)" },
+  ARCHIVED: { bg: "var(--card2)",       text: "var(--text3)" },
 };
 
 export const SURFACE_LABELS: Record<string, string> = {

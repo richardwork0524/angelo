@@ -9,6 +9,7 @@ import { type DashboardTask } from "@/components/expandable-task-row";
 import { type DetailTask } from "@/components/task/task-detail";
 import { useBreakpoint } from "@/hooks/useBreakpoint";
 import { cachedFetch, invalidateCache } from "@/lib/cache";
+import { ColorLegend } from "@/components/color-legend";
 
 // Lazy-load heavy components (not needed until user interaction)
 const TaskDetail = dynamic(() => import("@/components/task/task-detail").then((m) => ({ default: m.TaskDetail })), { ssr: false });
@@ -574,8 +575,11 @@ function DashboardContent() {
           <h1 className="text-[24px] font-bold text-[var(--text)]">
             {ROOT_TABS.find((t) => t.key === activeRoot)?.label || "Angelo"}
           </h1>
-          <div className="w-[36px] h-[36px] rounded-full bg-[var(--accent)] flex items-center justify-center text-white text-[14px] font-bold">
-            R
+          <div className="flex items-center gap-2">
+            <ColorLegend />
+            <div className="w-[36px] h-[36px] rounded-full bg-[var(--accent)] flex items-center justify-center text-white text-[14px] font-bold">
+              R
+            </div>
           </div>
         </div>
 
@@ -703,8 +707,12 @@ function DashboardContent() {
 
             {!sessionsExpanded && <div className="h-px bg-[var(--border)] mx-4" />}
 
+            {/* Scrollable area: missions + cards */}
+            {!sessionsExpanded && (
+            <div className="flex-1 overflow-y-auto min-h-0">
+
             {/* Missions grouped by entity */}
-            {!sessionsExpanded && data.missions_by_entity?.length > 0 && (
+            {data.missions_by_entity?.length > 0 && (
               <div className="shrink-0">
                 <div className="flex items-center justify-between px-4 py-2.5">
                   <h2 className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-[0.08em]">Missions</h2>
@@ -807,8 +815,7 @@ function DashboardContent() {
             )}
 
             {/* 2-column card grid (reference-inspired) */}
-            {!sessionsExpanded && (
-              <div className="flex-1 overflow-y-auto px-4 py-3 min-h-0">
+              <div className="px-4 py-3">
                 <div className="flex items-center justify-between mb-3">
                   <h2 className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-[0.08em]">
                     {ROOT_TABS.find((t) => t.key === activeRoot)?.label}
@@ -841,6 +848,7 @@ function DashboardContent() {
                   ))}
                 </div>
               </div>
+            </div>
             )}
           </div>
 
