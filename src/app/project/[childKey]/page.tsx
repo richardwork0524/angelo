@@ -13,6 +13,7 @@ import { ProjectCard } from "@/components/project-card";
 import { SessionLogList } from "@/components/session-log-list";
 import { type DetailTask } from "@/components/task/task-detail";
 import { Fab } from "@/components/fab";
+import { useBreakpoint } from "@/hooks/useBreakpoint";
 import { cachedFetch, invalidateCache } from "@/lib/cache";
 
 // Lazy-load heavy components
@@ -91,6 +92,7 @@ export default function ProjectDetailPage() {
   const params = useParams();
   const router = useRouter();
   const childKey = params.childKey as string;
+  const isDesktop = useBreakpoint(768);
 
   const [project, setProject] = useState<ProjectDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -624,7 +626,7 @@ export default function ProjectDetailPage() {
         />
       )}
 
-      <Fab onPress={() => setCaptureOpen(true)} />
+      {isDesktop && <Fab onPress={() => setCaptureOpen(true)} />}
       <QuickCaptureSheet
         open={captureOpen}
         onClose={() => setCaptureOpen(false)}

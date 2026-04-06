@@ -85,26 +85,24 @@ export function BottomNav({ onCapture }: BottomNavProps) {
       className="fixed bottom-0 left-0 right-0 z-30 flex items-center justify-around bg-[var(--surface)]/95 backdrop-blur-[20px] border-t border-[var(--border)]"
       style={{ paddingBottom: 'var(--safe-b)' }}
     >
-      <div className="relative flex items-center">
-        {/* Left tabs */}
-        {LEFT_TABS.map(renderTab)}
+      {/* Left tabs */}
+      {LEFT_TABS.map(renderTab)}
 
-        {/* Center FAB */}
-        <div className="flex-1 flex items-center justify-center">
-          <button
-            onClick={() => onCapture?.()}
-            className="w-[48px] h-[48px] rounded-full bg-[var(--accent)] flex items-center justify-center shadow-lg -mt-4 active:scale-95 transition-transform"
-          >
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-          </button>
-        </div>
-
-        {/* Right tabs */}
-        {RIGHT_TABS.map(renderTab)}
+      {/* Center FAB */}
+      <div className="flex items-center justify-center" style={{ width: 60 }}>
+        <button
+          onClick={() => onCapture?.()}
+          className="w-[48px] h-[48px] rounded-full bg-[var(--accent)] flex items-center justify-center shadow-lg -mt-4 active:scale-95 transition-transform"
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+        </button>
       </div>
+
+      {/* Right tabs */}
+      {RIGHT_TABS.map(renderTab)}
     </nav>
   );
 }
