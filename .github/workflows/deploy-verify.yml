@@ -1,0 +1,44 @@
+name: Deploy Verify
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for Vercel deploy
+        run: sleep 90
+
+      - name: Health check
+        id: health
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 https://rinoa.yhang.ai/api/health)
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+          if [ "$STATUS" != "200" ]; then
+            echo "::error::Deploy health check failed with HTTP $STATUS"
+            exit 1
+          fi
+          echo "Health check passed (HTTP $STATUS)"
+
+      - name: Log result to Rinoa-OS
+        if: always()
+        run: |
+          curl -s -X POST \
+            "https://flxedkwpdbgofgeivntq.supabase.co/functions/v1/webhook-receiver" \
+            -H "Content-Type: application/json" \
+            -H "x-webhook-secret: ${{ secrets.WEBHOOK_SECRET }}" \
+            -d '{
+              "source": "github",
+              "event_type": "deploy_verify",
+              "project_key": "angelo",
+              "detail": "deploy-verify ${{ job.status }}: commit ${{ github.sha }} by ${{ github.actor }}",
+              "payload": {
+                "status": "${{ job.status }}",
+                "sha": "${{ github.sha }}",
+                "actor": "${{ github.actor }}",
+                "health_http": "${{ steps.health.outputs.status }}",
+                "ref": "${{ github.ref }}"
+              }
+            }'
