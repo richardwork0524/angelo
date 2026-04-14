@@ -16,6 +16,7 @@ export interface ProjectCardData {
   display_name: string;
   status?: string;
   build_phase?: string;
+  current_version?: string | null;
   brief?: string | null;
   next_action?: string | null;
   last_session_date?: string | null;
@@ -45,6 +46,11 @@ export function ProjectCard({ project, variant, onClick }: ProjectCardProps) {
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-[15px] font-semibold text-[var(--text)] truncate">{project.display_name}</span>
           {project.status && <StatusBadge status={project.status} />}
+          {project.current_version && (
+            <span className="inline-flex items-center px-1.5 py-[1px] rounded-[4px] text-[10px] font-bold bg-[var(--cyan-dim,var(--accent-dim))] text-[var(--cyan,var(--accent))] shrink-0">
+              {project.current_version}
+            </span>
+          )}
         </div>
         {onClick && (
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-[var(--text3)] shrink-0">

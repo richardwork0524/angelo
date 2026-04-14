@@ -10,11 +10,14 @@ import { ErrorBanner } from "@/components/error-banner";
 import { EmptyState } from "@/components/empty-state";
 import { useToast } from "@/components/toast";
 import { ProjectCard } from "@/components/project-card";
+import { ProjectModules } from "@/components/modules/project-modules";
 import { SessionLogList } from "@/components/session-log-list";
 import { type DetailTask } from "@/components/task/task-detail";
 import { Fab } from "@/components/fab";
 import { useBreakpoint } from "@/hooks/useBreakpoint";
 import { cachedFetch, invalidateCache } from "@/lib/cache";
+import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh";
+import { bgMutate, patchTask, deleteTask } from "@/lib/mutate";
 
 // Lazy-load heavy components
 const QuickCaptureSheet = dynamic(() => import("@/components/quick-capture-sheet").then((m) => ({ default: m.QuickCaptureSheet })), { ssr: false });
@@ -65,12 +68,32 @@ interface ChildInfo {
   open_tasks: number;
 }
 
+interface ModuleData {
+  id: string;
+  module_type: string;
+  title: string;
+  body: string | null;
+  metadata: Record<string, unknown>;
+}
+
+interface DeploymentRow {
+  id: string;
+  project_key: string;
+  module_code: string | null;
+  module_slug: string | null;
+  git_repo: string | null;
+  vercel_project: string | null;
+  custom_domain: string | null;
+  last_deploy: string | null;
+}
+
 interface ProjectDetail {
   child_key: string;
   display_name: string;
   brief: string | null;
   status: string | null;
   build_phase: string | null;
+  current_version: string | null;
   surface: string | null;
   last_session_date: string | null;
   next_action: string | null;
@@ -84,6 +107,8 @@ interface ProjectDetail {
   missions: MissionInfo[];
   children_info: ChildInfo[];
   session_logs: SessionLog[];
+  modules: ModuleData[];
+  deployments: DeploymentRow[];
 }
 
 const PRIORITY_MISSION: Record<string, string> = { P0: "var(--red)", P1: "var(--orange)", P2: "var(--yellow)" };
@@ -143,13 +168,14 @@ export default function ProjectDetailPage() {
 
   useEffect(() => { fetchProject(); }, [fetchProject]);
 
-  // Dynamic content update: auto-refresh every 30s when tab is visible
-  useEffect(() => {
-    const timer = setInterval(() => {
-      if (!document.hidden) fetchProject(true);
-    }, 30000);
-    return () => clearInterval(timer);
-  }, [fetchProject]);
+  // Realtime: auto-refresh when tasks change for this project
+  useRealtimeRefresh({
+    table: 'angelo_tasks',
+    cachePrefix: `/api/projects/${childKey}`,
+    onRefresh: () => fetchProject(true),
+    filterColumn: 'project_key',
+    filterValue: childKey,
+  });
 
   // Listen for quick-capture event from BottomNav
   useEffect(() => {
@@ -187,25 +213,16 @@ export default function ProjectDetailPage() {
   }
 
   // ── Background sync helper ──
-  function bgSync(promise: Promise<Response>, successMsg: string) {
-    promise.then((res) => {
-      if (!res.ok) throw new Error("Failed");
-      showToast(successMsg);
-      // Invalidate cache and refresh from server
-      invalidateCache(`/api/projects/${childKey}`);
-      fetchProject(true);
-    }).catch(() => {
-      showToast("Sync failed — retrying...", "error");
-      fetchProject(true);
-    });
-  }
+  const syncOpts = (successMsg: string) => ({
+    onSuccess: () => { showToast(successMsg); invalidateCache(`/api/projects/${childKey}`); fetchProject(true); },
+    onError: () => { showToast("Sync failed — retrying...", "error"); fetchProject(true); },
+  });
 
   function handleToggleTask(taskId: string, currentCompleted: boolean) {
     const newCompleted = !currentCompleted;
     // Optimistic: move task between buckets
     setProject((prev) => {
       if (!prev) return prev;
-      const allBuckets = [...prev.tasks.this_week, ...prev.tasks.this_month, ...prev.tasks.parked, ...prev.tasks.completed];
       function findAndRemove(tasks: NestedTask[]): { found: NestedTask | null; remaining: NestedTask[] } {
         let found: NestedTask | null = null;
         const remaining = tasks.filter((t) => {
@@ -232,26 +249,13 @@ export default function ProjectDetailPage() {
       }
       return { ...prev, tasks: newTasks };
     });
-    bgSync(
-      fetch(`/api/projects/${childKey}/tasks/${taskId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: newCompleted ? "completed" : "open" }),
-      }),
-      newCompleted ? "Task completed" : "Task reopened"
-    );
+    patchTask(taskId, childKey, { status: newCompleted ? "completed" : "open" },
+      syncOpts(newCompleted ? "Task completed" : "Task reopened"));
   }
 
   function handleUpdateText(taskId: string, text: string) {
     updateTaskInState(taskId, (t) => ({ ...t, text }));
-    bgSync(
-      fetch(`/api/projects/${childKey}/tasks/${taskId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-      }),
-      "Saved"
-    );
+    patchTask(taskId, childKey, { text }, syncOpts("Saved"));
   }
 
   function handleMoveTask(taskId: string, targetBucket: string) {
@@ -278,35 +282,26 @@ export default function ProjectDetailPage() {
       }
       return { ...prev, tasks: newTasks };
     });
-    bgSync(
-      fetch(`/api/projects/${childKey}/tasks/${taskId}/move`, {
+    bgMutate({
+      request: () => fetch(`/api/projects/${childKey}/tasks/${taskId}/move`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ target_bucket: targetBucket }),
       }),
-      "Moved"
-    );
+      cacheKeys: [`/api/dashboard`, `/api/projects/${childKey}`],
+      ...syncOpts("Moved"),
+    });
   }
 
   function handleModalUpdate(taskId: string, fields: Record<string, unknown>) {
     updateTaskInState(taskId, (t) => ({ ...t, ...fields } as NestedTask));
-    bgSync(
-      fetch(`/api/tasks/${taskId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(fields),
-      }),
-      "Updated"
-    );
+    patchTask(taskId, childKey, fields, syncOpts("Updated"));
   }
 
   function handleModalDelete(taskId: string) {
     updateTaskInState(taskId, () => null);
     setSelectedTask(null);
-    bgSync(
-      fetch(`/api/tasks/${taskId}`, { method: "DELETE" }),
-      "Task deleted"
-    );
+    deleteTask(taskId, childKey, syncOpts("Task deleted"));
   }
 
   function handleAddTask(text: string, bucket: string) {
@@ -324,14 +319,15 @@ export default function ProjectDetailPage() {
       const bk = (bucket === "THIS_WEEK" ? "this_week" : bucket === "THIS_MONTH" ? "this_month" : "parked") as keyof ProjectDetail["tasks"];
       return { ...prev, tasks: { ...prev.tasks, [bk]: [...prev.tasks[bk], newTask] } };
     });
-    bgSync(
-      fetch(`/api/projects/${childKey}/tasks`, {
+    bgMutate({
+      request: () => fetch(`/api/projects/${childKey}/tasks`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text, bucket }),
       }),
-      "Task added"
-    );
+      cacheKeys: [`/api/dashboard`, `/api/projects/${childKey}`],
+      ...syncOpts("Task added"),
+    });
   }
 
   const totalOpen = project
@@ -383,6 +379,7 @@ export default function ProjectDetailPage() {
                   display_name: project.display_name,
                   status: project.status || undefined,
                   build_phase: project.build_phase || undefined,
+                  current_version: project.current_version,
                   brief: project.brief,
                   next_action: project.next_action,
                   last_session_date: project.last_session_date,
@@ -400,6 +397,11 @@ export default function ProjectDetailPage() {
                 variant="detailed"
               />
             </div>
+
+            {/* Project modules (context-specific sections) */}
+            {(project.modules?.length > 0 || project.deployments?.length > 0) && (
+              <ProjectModules modules={project.modules || []} deployments={project.deployments || []} />
+            )}
 
             {/* Children entities (non-leaf) */}
             {project.children_info && project.children_info.length > 0 && (
@@ -471,7 +473,7 @@ export default function ProjectDetailPage() {
             {/* Session logs */}
             {project.session_logs && project.session_logs.length > 0 && (
               <div className="px-4 pt-3">
-                <SessionLogList logs={project.session_logs} />
+                <SessionLogList logs={project.session_logs} childKey={childKey} />
               </div>
             )}
 
@@ -641,6 +643,8 @@ export default function ProjectDetailPage() {
 
 /* ── Bucket Section ── */
 
+const BUCKET_PAGE_SIZE = 30;
+
 function BucketSection({
   title,
   tasks,
@@ -660,6 +664,8 @@ function BucketSection({
   onUpdateText: (id: string, text: string) => void;
   onOpen: (task: NestedTask) => void;
 }) {
+  const [visibleCount, setVisibleCount] = useState(BUCKET_PAGE_SIZE);
+
   if (tasks.length === 0) return null;
 
   // Count done sub-tasks recursively
@@ -672,6 +678,8 @@ function BucketSection({
     return count;
   }
   const doneCount = countDone(tasks);
+  const visibleTasks = tasks.slice(0, visibleCount);
+  const hasMore = tasks.length > visibleCount;
 
   return (
     <div className="mb-4">
@@ -684,7 +692,7 @@ function BucketSection({
         </span>
       </div>
       <div className="space-y-0.5">
-        {tasks.map((task) => (
+        {visibleTasks.map((task) => (
           <TaskRow
             key={task.id}
             task={task}
@@ -695,6 +703,14 @@ function BucketSection({
           />
         ))}
       </div>
+      {hasMore && (
+        <button
+          onClick={() => setVisibleCount((c) => c + BUCKET_PAGE_SIZE)}
+          className="w-full mt-2 py-2 text-[13px] font-medium text-[var(--accent)] hover:bg-[var(--card)] rounded-[var(--r-sm)] transition-colors min-h-[44px]"
+        >
+          Show More ({tasks.length - visibleCount} remaining)
+        </button>
+      )}
     </div>
   );
 }

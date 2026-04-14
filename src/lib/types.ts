@@ -93,6 +93,16 @@ export interface Deployment {
   updated_at: string;
 }
 
+export interface ProjectModule {
+  id: string;
+  project_key: string;
+  module_type: string;
+  title: string;
+  body: string | null;
+  metadata: Record<string, unknown>;
+  sort_order: number;
+}
+
 export interface SkillInventory {
   id: string;
   skill_name: string;

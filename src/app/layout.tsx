@@ -36,6 +36,14 @@ export default function RootLayout({
     <html lang="en" className="h-full">
       <head>
         <meta name="mobile-web-app-capable" content="yes" />
+        <script dangerouslySetInnerHTML={{ __html: `
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js').catch(() => {});
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+              if (document.visibilityState === 'visible') location.reload();
+            });
+          }
+        `}} />
       </head>
       <body className="min-h-full flex flex-col antialiased" style={{ fontFamily: "-apple-system, 'SF Pro Display', system-ui, sans-serif" }}>
         <AppShell>{children}</AppShell>

@@ -9,6 +9,8 @@ import { type DashboardTask } from "@/components/expandable-task-row";
 import { type DetailTask } from "@/components/task/task-detail";
 import { useBreakpoint } from "@/hooks/useBreakpoint";
 import { cachedFetch, invalidateCache } from "@/lib/cache";
+import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh";
+import { patchTask, deleteTask, addSubtask } from "@/lib/mutate";
 import { ColorLegend } from "@/components/color-legend";
 
 // Lazy-load heavy components (not needed until user interaction)
@@ -361,20 +363,12 @@ function DashboardContent() {
 
   useEffect(() => { fetchDashboard(activeRoot); }, [activeRoot, fetchDashboard]);
 
-  // Dynamic content update: auto-refresh every 30s when tab is visible
-  useEffect(() => {
-    let timer: ReturnType<typeof setInterval>;
-    function startPolling() {
-      timer = setInterval(() => {
-        if (!document.hidden) {
-          invalidateCache(`/api/dashboard`);
-          fetchDashboard(activeRoot, false);
-        }
-      }, 30000);
-    }
-    startPolling();
-    return () => clearInterval(timer);
-  }, [activeRoot, fetchDashboard]);
+  // Realtime: auto-refresh when tasks change in Supabase
+  useRealtimeRefresh({
+    table: 'angelo_tasks',
+    cachePrefix: '/api/dashboard',
+    onRefresh: () => fetchDashboard(activeRoot, false),
+  });
 
   function handleTabChange(key: string) {
     router.push(`/dashboard?parent=${key}`, { scroll: false });
@@ -455,16 +449,10 @@ function DashboardContent() {
   }, [filteredTasks]);
 
   // ── Background sync helper ──
-  function bgSync(promise: Promise<Response>, successMsg: string) {
-    promise.then((res) => {
-      if (!res.ok) throw new Error("Failed");
-      showToast(successMsg);
-      fetchDashboard(activeRoot);
-    }).catch(() => {
-      showToast("Sync failed", "error");
-      fetchDashboard(activeRoot);
-    });
-  }
+  const syncOpts = (successMsg: string) => ({
+    onSuccess: () => { showToast(successMsg); fetchDashboard(activeRoot); },
+    onError: () => { showToast("Sync failed", "error"); fetchDashboard(activeRoot); },
+  });
 
   // ── Optimistic task updater ──
   function updateTaskOptimistic(taskId: string, updater: (t: Task) => Task | null) {
@@ -493,26 +481,22 @@ function DashboardContent() {
 
   function handleModalUpdate(taskId: string, fields: Record<string, unknown>) {
     updateTaskOptimistic(taskId, (t) => ({ ...t, ...fields } as Task));
-    bgSync(
-      fetch(`/api/tasks/${taskId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(fields) }),
-      "Updated"
-    );
+    const task = data?.tasks_by_priority.ALL.find((t) => t.id === taskId);
+    patchTask(taskId, task?.project_key || '', fields, syncOpts("Updated"));
   }
 
   function handleModalDelete(taskId: string) {
     updateTaskOptimistic(taskId, () => null);
     setDetailTask(null);
-    bgSync(fetch(`/api/tasks/${taskId}`, { method: "DELETE" }), "Task deleted");
+    const task = data?.tasks_by_priority.ALL.find((t) => t.id === taskId);
+    deleteTask(taskId, task?.project_key || '', syncOpts("Task deleted"));
   }
 
   function handleTaskUpdate(taskId: string, fields: Record<string, unknown>) {
     const task = data?.tasks_by_priority.ALL.find((t) => t.id === taskId);
     if (!task) return;
     updateTaskOptimistic(taskId, (t) => ({ ...t, ...fields } as Task));
-    bgSync(
-      fetch(`/api/projects/${task.project_key}/tasks/${taskId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(fields) }),
-      "Saved"
-    );
+    patchTask(taskId, task.project_key, fields, syncOpts("Saved"));
   }
 
   function handleTaskComplete(taskId: string, logMessage: string) {
@@ -520,13 +504,10 @@ function DashboardContent() {
     if (!task) return;
     updateTaskOptimistic(taskId, (t) => ({ ...t, completed: true }));
     setExpandedTaskId(null);
-    bgSync(
-      fetch(`/api/projects/${task.project_key}/tasks/${taskId}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "completed", log_entry: { type: "completion", message: logMessage } }),
-      }),
-      "Task completed"
-    );
+    patchTask(taskId, task.project_key, {
+      status: "completed",
+      log_entry: { type: "completion", message: logMessage },
+    }, syncOpts("Task completed"));
   }
 
   function handleSectionComplete(taskId: string, currentProgress: string) {
@@ -547,24 +528,14 @@ function DashboardContent() {
     }
     updateTaskOptimistic(taskId, (t) => ({ ...t, progress: newProgress, completed: done >= total }));
     if (done >= total) setExpandedTaskId(null);
-    bgSync(
-      fetch(`/api/projects/${task.project_key}/tasks/${taskId}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
-      }),
-      done >= total ? "All sections completed" : `Section ${done}/${total} done`
-    );
+    patchTask(taskId, task.project_key, payload,
+      syncOpts(done >= total ? "All sections completed" : `Section ${done}/${total} done`));
   }
 
   function handleAddSubtask(parentId: string, text: string) {
     const parent = data?.tasks_by_priority.ALL.find((t) => t.id === parentId);
     if (!parent) return;
-    bgSync(
-      fetch(`/api/projects/${parent.project_key}/tasks`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, bucket: parent.bucket, parent_task_id: parentId }),
-      }),
-      "Subtask added"
-    );
+    addSubtask(parent.project_key, parentId, text, parent.bucket, syncOpts("Subtask added"));
   }
 
   return (
@@ -998,14 +969,7 @@ function DashboardContent() {
           onAddSubtask={async (parentId, text) => {
             const parentTask = data?.tasks_by_priority.ALL.find((t) => t.id === parentId);
             if (!parentTask) return;
-            bgSync(
-              fetch(`/api/projects/${parentTask.project_key}/tasks`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ text, bucket: parentTask.bucket, parent_task_id: parentId }),
-              }),
-              "Subtask added"
-            );
+            addSubtask(parentTask.project_key, parentId, text, parentTask.bucket, syncOpts("Subtask added"));
           }}
         />
       )}

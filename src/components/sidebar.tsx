@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { buildTree, type TreeNode } from '@/lib/tree';
 import type { ProjectNode } from '@/lib/tree';
 import { cachedFetch } from '@/lib/cache';
+import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -28,6 +29,13 @@ export function Sidebar() {
   useEffect(() => {
     fetchProjects();
   }, [fetchProjects]);
+
+  // Realtime: auto-refresh when projects change
+  useRealtimeRefresh({
+    table: 'angelo_projects',
+    cachePrefix: '/api/projects',
+    onRefresh: fetchProjects,
+  });
 
   // Auto-expand ancestors of active item
   useEffect(() => {

@@ -119,8 +119,8 @@ export async function GET(
     }
     const allKeys = is_leaf ? [childKey] : getDescendantKeys(childKey);
 
-    // Parallel: tasks + session logs
-    const [tasksResult, sessionsResult] = await Promise.all([
+    // Parallel: tasks + session logs + modules + deployments
+    const [tasksResult, sessionsResult, modulesResult, deploymentsResult] = await Promise.all([
       supabase
         .from("angelo_tasks")
         .select("*")
@@ -133,6 +133,15 @@ export async function GET(
         .in("project_key", allKeys)
         .order("session_date", { ascending: false })
         .limit(5),
+      supabase
+        .from("angelo_project_modules")
+        .select("id, project_key, module_type, title, body, metadata, sort_order")
+        .eq("project_key", childKey)
+        .order("sort_order"),
+      supabase
+        .from("angelo_deployments")
+        .select("id, project_key, module_code, module_slug, git_repo, vercel_project, custom_domain, vault_path, last_deploy")
+        .in("project_key", allKeys),
     ]);
 
     if (tasksResult.error) throw tasksResult.error;
@@ -186,6 +195,7 @@ export async function GET(
       brief: project.brief,
       status: project.status || null,
       build_phase: project.build_phase || null,
+      current_version: project.current_version || null,
       surface: project.surface || null,
       last_session_date: project.last_session_date,
       next_action: project.next_action || null,
@@ -194,6 +204,8 @@ export async function GET(
       missions,
       children_info,
       session_logs: sessionsResult.data || [],
+      modules: modulesResult.data || [],
+      deployments: deploymentsResult.data || [],
     });
   } catch (err) {
     console.error("Project detail error:", err);

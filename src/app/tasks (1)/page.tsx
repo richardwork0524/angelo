@@ -5,6 +5,8 @@ import dynamic from 'next/dynamic';
 import { StickyHeader } from '@/components/sticky-header';
 import { useToast } from '@/components/toast';
 import { type DetailTask } from '@/components/task/task-detail';
+import { cachedFetch } from '@/lib/cache';
+import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 
 const TaskDetail = dynamic(() => import('@/components/task/task-detail').then((m) => ({ default: m.TaskDetail })), { ssr: false });
 
@@ -48,7 +50,11 @@ export default function TasksPage() {
       // Fetch all roots in parallel to get all tasks across entire portfolio
       const roots = ['general', 'group-strategy', 'company', 'development'];
       const results = await Promise.all(
+<<<<<<< HEAD
         roots.map((r) => fetch(`/api/dashboard?parent=${r}`).then((res) => res.json()))
+=======
+        roots.map((r) => cachedFetch<{ tasks_by_priority?: { ALL?: Task[] } }>(`/api/dashboard?parent=${r}`, 15000))
+>>>>>>> ccc71d0 (feat: project modules system + session improvements + version badge)
       );
       // Merge tasks from all roots
       const allTasks: Task[] = [];
@@ -72,6 +78,16 @@ export default function TasksPage() {
 
   useEffect(() => { fetchTasks(); }, [fetchTasks]);
 
+<<<<<<< HEAD
+=======
+  // Realtime: auto-refresh when tasks change
+  useRealtimeRefresh({
+    table: 'angelo_tasks',
+    cachePrefix: '/api/dashboard',
+    onRefresh: fetchTasks,
+  });
+
+>>>>>>> ccc71d0 (feat: project modules system + session improvements + version badge)
   const filteredTasks = useMemo(() => {
     if (!data) return [];
     const pool = filter === 'ALL'
