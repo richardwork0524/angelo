@@ -57,6 +57,12 @@ export interface SessionLog {
   surface: string;
   title: string;
   summary: string | null;
+  chain_id: string | null;
+  entry_point: string | null;
+  mission: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cost_usd: number | null;
   created_at: string;
 }
 

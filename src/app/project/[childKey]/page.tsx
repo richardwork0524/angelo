@@ -111,6 +111,25 @@ interface ProjectDetail {
   deployments: DeploymentRow[];
 }
 
+interface NoteItem {
+  id: string;
+  project_key: string;
+  text: string;
+  note_type: string;
+  feature: string | null;
+  mission: string | null;
+  version: string | null;
+  resolved: boolean;
+  created_at: string;
+}
+
+const NOTE_ICONS: Record<string, { icon: string; bg: string; color: string }> = {
+  GAP: { icon: '!', bg: 'var(--red-dim)', color: 'var(--red)' },
+  IDEA: { icon: '✦', bg: 'var(--purple-dim)', color: 'var(--purple)' },
+  OBSERVATION: { icon: '◉', bg: 'var(--cyan-dim)', color: 'var(--cyan)' },
+  REVISIT: { icon: '↻', bg: 'var(--yellow-dim)', color: 'var(--yellow)' },
+};
+
 const PRIORITY_MISSION: Record<string, string> = { P0: "var(--red)", P1: "var(--orange)", P2: "var(--yellow)" };
 
 export default function ProjectDetailPage() {
@@ -128,6 +147,9 @@ export default function ProjectDetailPage() {
   const [expandedMission, setExpandedMission] = useState<string | null>(null);
   const [captureOpen, setCaptureOpen] = useState(false);
   const [activeBucket, setActiveBucket] = useState<"THIS_WEEK" | "THIS_MONTH" | "PARKED">("THIS_WEEK");
+  const [activeTab, setActiveTab] = useState<"tasks" | "notes" | "timeline">("tasks");
+  const [notes, setNotes] = useState<NoteItem[]>([]);
+  const [notesLoaded, setNotesLoaded] = useState(false);
   const { showToast, ToastContainer } = useToast();
 
   const fetchProject = useCallback(async (skipCache = false) => {
@@ -176,6 +198,38 @@ export default function ProjectDetailPage() {
     filterColumn: 'project_key',
     filterValue: childKey,
   });
+
+  // Realtime: auto-refresh notes when they change
+  useRealtimeRefresh({
+    table: 'angelo_notes',
+    cachePrefix: `/api/notes`,
+    onRefresh: async () => {
+      try {
+        const res = await fetch(`/api/notes?project_key=${childKey}`);
+        if (res.ok) {
+          const data = await res.json();
+          setNotes(data.notes || []);
+        }
+      } catch { /* ignore */ }
+    },
+    filterColumn: 'project_key',
+    filterValue: childKey,
+  });
+
+  // Fetch notes when Notes tab is first selected
+  useEffect(() => {
+    if (activeTab !== 'notes' || notesLoaded) return;
+    (async () => {
+      try {
+        const res = await fetch(`/api/notes?project_key=${childKey}`);
+        if (res.ok) {
+          const data = await res.json();
+          setNotes(data.notes || []);
+        }
+      } catch { /* ignore */ }
+      setNotesLoaded(true);
+    })();
+  }, [activeTab, notesLoaded, childKey]);
 
   // Listen for quick-capture event from BottomNav
   useEffect(() => {
@@ -470,15 +524,98 @@ export default function ProjectDetailPage() {
               </div>
             )}
 
-            {/* Session logs */}
-            {project.session_logs && project.session_logs.length > 0 && (
-              <div className="px-4 pt-3">
-                <SessionLogList logs={project.session_logs} childKey={childKey} />
+            {/* Tab bar: Tasks / Notes / Timeline */}
+            <div className="px-4 pt-3">
+              <div className="flex gap-1 border-b border-[var(--border)]">
+                {([
+                  { key: 'tasks' as const, label: `Tasks (${totalOpen})` },
+                  { key: 'notes' as const, label: `Notes (${notes.length})` },
+                  { key: 'timeline' as const, label: 'Timeline' },
+                ]).map((tab) => (
+                  <button
+                    key={tab.key}
+                    onClick={() => setActiveTab(tab.key)}
+                    className="px-3.5 py-2 text-[12px] font-medium -mb-px transition-colors"
+                    style={{
+                      color: activeTab === tab.key ? 'var(--accent)' : 'var(--text3)',
+                      borderBottom: activeTab === tab.key ? '2px solid var(--accent)' : '2px solid transparent',
+                    }}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Notes tab */}
+            {activeTab === 'notes' && (
+              <div className="px-4 py-3">
+                {!notesLoaded ? (
+                  <p className="text-[13px] text-[var(--text3)]">Loading notes...</p>
+                ) : notes.length === 0 ? (
+                  <p className="text-[13px] text-[var(--text3)]">No notes yet. Add notes via CLI: task note add --project {childKey}</p>
+                ) : (
+                  <div className="space-y-2">
+                    {notes.map((n) => {
+                      const style = NOTE_ICONS[n.note_type] || NOTE_ICONS.OBSERVATION;
+                      return (
+                        <div key={n.id} className="flex items-start gap-2.5 p-3 bg-[var(--card)] rounded-[10px]" style={{ opacity: n.resolved ? 0.5 : 1 }}>
+                          <div className="w-[26px] h-[26px] rounded-[6px] flex items-center justify-center text-[11px] font-bold shrink-0" style={{ background: style.bg, color: style.color }}>
+                            {style.icon}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[13px] font-medium" style={{ textDecoration: n.resolved ? 'line-through' : 'none' }}>{n.text}</p>
+                            <p className="text-[10px] text-[var(--text3)] mt-0.5 flex items-center gap-1 flex-wrap">
+                              <span className="font-semibold" style={{ color: style.color }}>{n.note_type}</span>
+                              {n.version && <><span>&middot;</span><span style={{ color: 'var(--orange)' }}>{n.version}</span></>}
+                              {n.mission && <><span>&middot;</span><span>{n.mission}</span></>}
+                              {n.resolved && <><span>&middot;</span><span style={{ color: 'var(--green)' }}>RESOLVED</span></>}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
 
-            {/* Tasks section */}
-            {totalAll === 0 ? (
+            {/* Timeline tab */}
+            {activeTab === 'timeline' && (
+              <div className="px-4 py-3">
+                {project.session_logs && project.session_logs.length > 0 ? (
+                  <div className="relative pl-7">
+                    <div className="absolute left-[9px] top-[6px] bottom-[6px] w-[2px] bg-[var(--border)] rounded-sm" />
+                    {project.session_logs.map((s, i) => (
+                      <div key={s.id} className="relative pb-4 last:pb-0">
+                        <div
+                          className="absolute -left-7 top-[2px] w-[18px] h-[18px] rounded-full flex items-center justify-center text-[8px] font-bold text-white z-[1]"
+                          style={{
+                            background: i === 0 ? 'var(--accent)' : s.surface === 'CODE' ? 'var(--accent)' : s.surface === 'CHAT' ? 'var(--green)' : 'var(--purple)',
+                            boxShadow: i === 0 ? '0 0 6px var(--accent)' : 'none',
+                          }}
+                        >
+                          {s.surface?.[0] || 'S'}
+                        </div>
+                        <div>
+                          <p className="text-[12px] font-semibold">{s.title || 'Untitled'}</p>
+                          <p className="text-[10px] text-[var(--text3)] mt-0.5">
+                            {s.session_date}
+                            {s.surface && <> &middot; <span style={{ color: s.surface === 'CODE' ? 'var(--accent)' : s.surface === 'CHAT' ? 'var(--green)' : 'var(--purple)' }}>{s.surface}</span></>}
+                          </p>
+                          {s.summary && <p className="text-[11px] text-[var(--text2)] mt-1 line-clamp-2">{s.summary}</p>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[13px] text-[var(--text3)]">No sessions recorded for this project yet.</p>
+                )}
+              </div>
+            )}
+
+            {/* Tasks tab content */}
+            {activeTab === 'tasks' && (totalAll === 0 ? (
               <EmptyState message="No tasks yet. Add your first task below." />
             ) : (
               <div>
@@ -568,7 +705,7 @@ export default function ProjectDetailPage() {
                 )}
                 </div>
               </div>
-            )}
+            ))}
           </>
         ) : null}
       </PullToRefresh>

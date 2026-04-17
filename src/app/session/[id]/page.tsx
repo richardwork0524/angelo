@@ -174,14 +174,29 @@ export default function SessionPage() {
           )}
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "16px 0 8px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "16px 0 4px" }}>
           <h1 style={{ fontSize: 22, fontWeight: 700 }}>{session.title}</h1>
           <SurfaceBadge surface={session.surface} />
         </div>
-        <p style={{ fontSize: 13, color: "var(--text2)", marginBottom: 24 }}>
-          {session.session_date}
-          {session.project_key && ` \u00B7 ${session.project_key}`}
-        </p>
+        <div style={{ fontSize: 12, color: "var(--text2)", marginBottom: 8, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+          <span>{session.session_date}</span>
+          {session.project_key && <><span>&middot;</span><span style={{ color: "var(--accent)" }}>{session.project_key}</span></>}
+          {session.chain_id && <><span>&middot;</span><span style={{ color: "var(--purple)" }}>chain: {session.chain_id}</span></>}
+        </div>
+        <div style={{ display: "flex", gap: 4, marginBottom: 16, flexWrap: "wrap" }}>
+          {session.surface && <Tag bg="var(--accent-dim)" color="var(--accent)">{session.surface}</Tag>}
+          {session.entry_point && <Tag bg="var(--purple-dim)" color="var(--purple)">{session.entry_point}</Tag>}
+          {session.mission && <Tag bg="var(--green-dim)" color="var(--green)">{session.mission}</Tag>}
+          {session.chain_id && <Tag bg="var(--green-dim)" color="var(--green)">Chain</Tag>}
+        </div>
+
+        {/* Stat Bar */}
+        <div style={{ display: "flex", background: "var(--card)", borderRadius: "var(--r)", overflow: "hidden", marginBottom: 20, boxShadow: "0 2px 12px rgba(0,0,0,.1)" }}>
+          <StatCell label="Input" value={fmtTokens(session.input_tokens || 0)} color="var(--accent)" />
+          <StatCell label="Output" value={fmtTokens(session.output_tokens || 0)} />
+          <StatCell label="Cost" value={`$${(Number(session.cost_usd) || 0).toFixed(2)}`} color="var(--green)" />
+          <StatCell label="Tokens" value={fmtTokens((session.input_tokens || 0) + (session.output_tokens || 0))} color="var(--text2)" />
+        </div>
 
         {session.summary && (
           <section style={{ marginBottom: 32 }}>
@@ -262,7 +277,7 @@ export default function SessionPage() {
                     border: "none", borderRadius: "var(--r-sm)", fontSize: 12, fontWeight: 600, cursor: "pointer",
                   }}
                 >
-                  {copied ? "Copied!" : "Copy"}
+                  {copied ? "Copied!" : "Copy to CC"}
                 </button>
               </div>
               {handoff ? (
@@ -272,6 +287,7 @@ export default function SessionPage() {
                     background: "var(--card)", padding: 16, borderRadius: "var(--r)",
                     whiteSpace: "pre-wrap", wordBreak: "break-word", overflow: "auto",
                     maxHeight: 480, border: "1px solid var(--border)",
+                    fontFamily: "'SF Mono', SFMono-Regular, Menlo, monospace",
                   }}
                 >
                   {buildHandoffText(session, events, handoff)}
@@ -284,5 +300,26 @@ export default function SessionPage() {
         </section>
       </main>
     </div>
+  );
+}
+
+/* ── Helpers ── */
+
+function fmtTokens(n: number): string {
+  return n >= 1000 ? `${(n / 1000).toFixed(0)}K` : String(n);
+}
+
+function StatCell({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <div style={{ flex: 1, textAlign: "center", padding: "14px 8px", borderRight: "1px solid var(--border)" }}>
+      <div style={{ fontSize: 17, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: color || "var(--text)" }}>{value}</div>
+      <div style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", color: "var(--text3)", letterSpacing: "0.03em", marginTop: 2 }}>{label}</div>
+    </div>
+  );
+}
+
+function Tag({ bg, color, children }: { bg: string; color: string; children: React.ReactNode }) {
+  return (
+    <span style={{ fontSize: 9, fontWeight: 600, padding: "2px 6px", borderRadius: 4, background: bg, color }}>{children}</span>
   );
 }
