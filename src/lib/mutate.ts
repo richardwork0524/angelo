@@ -62,6 +62,24 @@ export function deleteTask(
   });
 }
 
+/** Convenience: PATCH a handoff status */
+export function patchHandoff(
+  handoffId: string,
+  status: string,
+  opts: { onSuccess?: () => void; onError?: () => void } = {}
+) {
+  bgMutate({
+    request: () =>
+      fetch('/api/handoffs', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: handoffId, status }),
+      }),
+    cacheKeys: ['/api/handoffs'],
+    ...opts,
+  });
+}
+
 /** Convenience: POST a new subtask */
 export function addSubtask(
   projectKey: string,

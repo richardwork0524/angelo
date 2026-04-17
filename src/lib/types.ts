@@ -121,6 +121,25 @@ export interface SkillInventory {
   updated_at: string;
 }
 
+export interface Handoff {
+  id: string;
+  created_by_session_id: string | null;
+  project_key: string;
+  scope_type: 'app' | 'module' | 'feature' | 'mission';
+  scope_name: string;
+  entry_point: string | null;
+  version: string | null;
+  sections_total: number;
+  sections_completed: number;
+  sections_remaining: { name: string; status: string; notes: string | null }[];
+  source: 'manual' | 'auto';
+  status: 'open' | 'picked_up' | 'completed';
+  picked_up_by_session_id: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ProjectWithCounts extends Project {
   open_tasks: number;
   this_week_tasks: number;
