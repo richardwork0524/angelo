@@ -155,6 +155,24 @@ if (typeof window !== 'undefined') {
   cleanupStaleEntries();
 }
 
+// --- Recently-invalidated guard ---
+// Tracks prefixes that were just invalidated. Prevents cachedFetch from
+// returning stale IDB data before the async IDB delete completes.
+const invalidatedPrefixes = new Set<string>();
+
+function markInvalidated(prefix: string) {
+  invalidatedPrefixes.add(prefix);
+  setTimeout(() => invalidatedPrefixes.delete(prefix), 5000);
+}
+
+function isRecentlyInvalidated(key: string): boolean {
+  if (invalidatedPrefixes.has('__all__')) return true;
+  for (const prefix of invalidatedPrefixes) {
+    if (key.includes(prefix) || prefix.includes(key)) return true;
+  }
+  return false;
+}
+
 // --- Public API ---
 
 export async function cachedFetch<T = unknown>(
@@ -176,8 +194,9 @@ export async function cachedFetch<T = unknown>(
     return memEntry.promise as Promise<T>;
   }
 
-  // 2. Cold path: IndexedDB
-  const idbEntry = await idbGet(key);
+  // 2. Cold path: IndexedDB (skip if recently invalidated — async IDB delete may not be done)
+  const recentlyInvalidated = isRecentlyInvalidated(key);
+  const idbEntry = recentlyInvalidated ? undefined : await idbGet(key);
   if (idbEntry && now - idbEntry.timestamp < ttlMs) {
     // Hydrate hot cache from IDB
     cache.set(key, { data: idbEntry.data, timestamp: idbEntry.timestamp });
@@ -185,7 +204,8 @@ export async function cachedFetch<T = unknown>(
   }
 
   // 3. Stale-while-revalidate: return stale IDB data immediately, refresh in background
-  const hasStaleData = idbEntry && idbEntry.data != null;
+  // Skip if recently invalidated — stale data would undo the mutation
+  const hasStaleData = !recentlyInvalidated && idbEntry && idbEntry.data != null;
 
   const promise = fetch(url, init)
     .then(async (res) => {
@@ -230,12 +250,14 @@ export function invalidateCache(urlPrefix?: string): void {
   if (!urlPrefix) {
     cache.clear();
     idbClear();
+    markInvalidated('__all__');
     notifySubscribers();
     return;
   }
   for (const key of cache.keys()) {
     if (key.includes(urlPrefix)) cache.delete(key);
   }
+  markInvalidated(urlPrefix);
   idbDeleteByPrefix(urlPrefix);
   notifySubscribers(urlPrefix);
 }
