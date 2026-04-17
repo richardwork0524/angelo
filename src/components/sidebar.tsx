@@ -205,6 +205,22 @@ export function Sidebar() {
           All Projects
         </button>
         <button
+          onClick={() => router.push('/apps')}
+          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-[var(--r-sm)] text-[14px] font-medium transition-colors min-h-[44px] ${
+            pathname?.startsWith('/apps')
+              ? 'bg-[var(--accent-dim)] text-[var(--accent)]'
+              : 'text-[var(--text2)] hover:bg-[var(--card)] hover:text-[var(--text)]'
+          }`}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="7" height="7" rx="1.5" />
+            <path d="M14 3h7v7" />
+            <path d="M14 14h7v7h-7z" />
+            <path d="M3 14h7v7H3z" />
+          </svg>
+          Apps
+        </button>
+        <button
           onClick={() => router.push('/skills')}
           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-[var(--r-sm)] text-[14px] font-medium transition-colors min-h-[44px] ${
             pathname === '/skills'

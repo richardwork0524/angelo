@@ -151,3 +151,52 @@ export interface ProjectWithCounts extends Project {
   this_month_tasks: number;
   completed_tasks: number;
 }
+
+/* ── App / Module / Feature hierarchy ── */
+
+export interface App {
+  id: string;
+  app_key: string;
+  project_key: string | null;
+  display_name: string;
+  description: string | null;
+  rinoa_path: string;
+  code_path: string | null;
+  git_repo: string | null;
+  deployed_url: string | null;
+  status: 'ACTIVE' | 'ARCHIVED' | 'PAUSED';
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AppModule {
+  id: string;
+  module_key: string;
+  app_id: string;
+  display_name: string;
+  description: string | null;
+  rinoa_path: string | null;
+  status: 'ACTIVE' | 'ARCHIVED' | 'PLANNED';
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Feature {
+  id: string;
+  feature_key: string;
+  module_id: string;
+  display_name: string;
+  description: string | null;
+  status: 'PLANNED' | 'IN_PROGRESS' | 'LIVE' | 'DEPRECATED';
+  entry_point: string | null;
+  rinoa_path: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AppWithChildren extends App {
+  modules: (AppModule & { features: Feature[] })[];
+}

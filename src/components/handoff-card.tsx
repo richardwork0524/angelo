@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { HandoffPopup } from '@/components/popups/handoff-popup';
 import { StepTrackerCompact } from '@/components/step-tracker';
+import { IdBadge } from '@/components/id-badge';
 import type { Handoff } from '@/lib/types';
 
 function timeAgo(date: string): string {
@@ -35,23 +36,20 @@ export function HandoffCard({ handoff, onUpdate }: { handoff: Handoff; onUpdate?
       >
         {/* Top row: code badge + title */}
         <div className="flex items-center gap-2 mb-1.5">
-          {handoff.handoff_code && (
-            <span className="text-[9px] font-mono font-bold px-1.5 py-[1px] rounded-[4px] bg-[var(--accent-dim)] text-[var(--accent)] shrink-0">
-              {handoff.handoff_code}
-            </span>
-          )}
+          <IdBadge value={handoff.handoff_code} label="handoff_code" kind="code" />
           <span className="text-[13px] font-semibold truncate text-[var(--text)] group-hover:text-[var(--accent)] transition-colors">
             {handoff.scope_name}
           </span>
         </div>
 
-        {/* Summary line: project + scope_type + time */}
-        <div className="text-[11px] text-[var(--text3)] flex items-center gap-1.5 mb-2.5">
-          <span>{handoff.project_key}</span>
+        {/* Summary line: project + scope_type + time + vault */}
+        <div className="text-[11px] text-[var(--text3)] flex items-center gap-1.5 mb-2.5 flex-wrap">
+          <IdBadge value={handoff.project_key} label="project_key" kind="key" size="xs" />
           <span>&middot;</span>
           <span>{handoff.scope_type}</span>
           <span>&middot;</span>
           <span>{timeAgo(handoff.created_at)}</span>
+          {handoff.vault_path && (<><span>&middot;</span><IdBadge value={handoff.vault_path} label="vault" kind="path" size="xs" /></>)}
         </div>
 
         {/* Step tracker */}

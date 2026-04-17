@@ -6,7 +6,16 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { StickyHeader } from "@/components/sticky-header";
 import { SurfaceBadge } from "@/components/surface-badge";
-import type { SessionLog, SessionEvent, Project, Task } from "@/lib/types";
+import { IdBadge } from "@/components/id-badge";
+import type { SessionLog, SessionEvent, Project, Task, Handoff } from "@/lib/types";
+
+/**
+ * Session detail with attribution (pain #5):
+ * explicit tasks touched + handoff(s) emitted this session.
+ */
+interface SessionDetail extends SessionLog {
+  task_ids?: string[] | null;
+}
 
 interface HandoffData {
   project: Project | null;
@@ -86,8 +95,11 @@ function buildHandoffText(
 
 export default function SessionPage() {
   const { id } = useParams<{ id: string }>();
-  const [session, setSession] = useState<SessionLog | null>(null);
+  const [session, setSession] = useState<SessionDetail | null>(null);
   const [events, setEvents] = useState<SessionEvent[]>([]);
+  const [touchedTasks, setTouchedTasks] = useState<Task[]>([]);
+  const [emittedHandoffs, setEmittedHandoffs] = useState<Handoff[]>([]);
+  const [mountedHandoffs, setMountedHandoffs] = useState<Handoff[]>([]);
   const [loading, setLoading] = useState(true);
   const [handoff, setHandoff] = useState<HandoffData | null>(null);
   const [handoffOpen, setHandoffOpen] = useState(false);
@@ -96,12 +108,29 @@ export default function SessionPage() {
   useEffect(() => {
     if (!id) return;
     (async () => {
-      const [{ data: sess }, { data: evts }] = await Promise.all([
+      const [{ data: sess }, { data: evts }, { data: createdHs }, { data: mountedHs }] = await Promise.all([
         supabase.from("angelo_session_logs").select("*").eq("id", id).single(),
         supabase.from("angelo_session_events").select("*").eq("session_log_id", id).order("created_at"),
+        supabase.from("angelo_handoffs").select("*").eq("created_by_session_id", id),
+        supabase.from("angelo_handoffs").select("*").eq("picked_up_by_session_id", id),
       ]);
-      if (sess) setSession(sess);
+      if (sess) setSession(sess as SessionDetail);
       if (evts) setEvents(evts);
+      setEmittedHandoffs(createdHs || []);
+      setMountedHandoffs(mountedHs || []);
+
+      // Fetch touched tasks via (a) session_logs.task_ids[] and (b) session_events.task_id
+      const idSet = new Set<string>();
+      const sessTyped = sess as SessionDetail | null;
+      if (sessTyped?.task_ids) sessTyped.task_ids.forEach((t) => idSet.add(t));
+      (evts || []).forEach((e: SessionEvent) => { if (e.task_id) idSet.add(e.task_id); });
+      if (idSet.size > 0) {
+        const { data: taskRows } = await supabase
+          .from("angelo_tasks")
+          .select("id, text, task_code, project_key, bucket, priority, completed, mission, parent_task_id")
+          .in("id", Array.from(idSet));
+        setTouchedTasks(taskRows || []);
+      }
       setLoading(false);
     })();
   }, [id]);
@@ -174,9 +203,11 @@ export default function SessionPage() {
           )}
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "16px 0 4px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "16px 0 4px", flexWrap: "wrap" }}>
           <h1 style={{ fontSize: 22, fontWeight: 700 }}>{session.title}</h1>
           <SurfaceBadge surface={session.surface} />
+          <IdBadge value={session.session_code} label="session_code" kind="code" />
+          {session.project_key && <IdBadge value={session.project_key} label="project_key" kind="key" size="xs" />}
         </div>
         <div style={{ fontSize: 12, color: "var(--text2)", marginBottom: 8, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
           <span>{session.session_date}</span>
@@ -204,6 +235,58 @@ export default function SessionPage() {
             <p style={{ fontSize: 14, color: "var(--text)", lineHeight: 1.6, background: "var(--card)", padding: 16, borderRadius: "var(--r)" }}>
               {session.summary}
             </p>
+          </section>
+        )}
+
+        {/* Attribution: handoffs mounted + emitted, tasks touched (pain #5) */}
+        {(mountedHandoffs.length > 0 || emittedHandoffs.length > 0 || touchedTasks.length > 0) && (
+          <section style={{ marginBottom: 32 }}>
+            <h2 style={{ fontSize: 14, fontWeight: 600, color: "var(--text2)", marginBottom: 10 }}>Attribution</h2>
+            {mountedHandoffs.length > 0 && (
+              <AttrRow label="Mounted handoff(s)" accent="var(--accent)">
+                {mountedHandoffs.map((h) => (
+                  <span key={h.id} className="inline-flex items-center gap-1.5 mr-2 mb-1">
+                    <IdBadge value={h.handoff_code} label="handoff_code" kind="code" />
+                    <span className="text-[12px] text-[var(--text)]">{h.scope_name}</span>
+                    <span className="text-[10px] text-[var(--text3)]">({h.sections_completed}/{h.sections_total})</span>
+                  </span>
+                ))}
+              </AttrRow>
+            )}
+            {emittedHandoffs.length > 0 && (
+              <AttrRow label="Emitted handoff(s)" accent="var(--green)">
+                {emittedHandoffs.map((h) => (
+                  <span key={h.id} className="inline-flex items-center gap-1.5 mr-2 mb-1">
+                    <IdBadge value={h.handoff_code} label="handoff_code" kind="code" />
+                    <span className="text-[12px] text-[var(--text)]">{h.scope_name}</span>
+                    <span className="text-[10px] px-1.5 py-[1px] rounded bg-[var(--card)] text-[var(--text3)]">{h.status}</span>
+                  </span>
+                ))}
+              </AttrRow>
+            )}
+            {touchedTasks.length > 0 && (
+              <AttrRow label={`Tasks touched (${touchedTasks.length})`} accent="var(--purple)">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 mt-1">
+                  {touchedTasks.map((t) => (
+                    <Link
+                      key={t.id}
+                      href={`/project/${t.project_key}`}
+                      className="flex items-center gap-2 px-2.5 py-1.5 rounded-[6px] bg-[var(--card)] hover:bg-[var(--card2,var(--card))] border border-[var(--border)] no-underline"
+                    >
+                      {t.priority && (
+                        <span className="w-[6px] h-[6px] rounded-full shrink-0"
+                              style={{ background: t.priority === 'P0' ? 'var(--red)' : t.priority === 'P1' ? 'var(--orange)' : 'var(--yellow)' }} />
+                      )}
+                      <IdBadge value={t.task_code} label="task_code" kind="code" size="xs" />
+                      <span className={`text-[12px] flex-1 min-w-0 truncate ${t.completed ? 'line-through text-[var(--text3)]' : 'text-[var(--text2)]'}`}>
+                        {t.text}
+                      </span>
+                      {t.mission && <span className="text-[9px] text-[var(--green)] shrink-0">{t.mission}</span>}
+                    </Link>
+                  ))}
+                </div>
+              </AttrRow>
+            )}
           </section>
         )}
 
@@ -321,5 +404,16 @@ function StatCell({ label, value, color }: { label: string; value: string; color
 function Tag({ bg, color, children }: { bg: string; color: string; children: React.ReactNode }) {
   return (
     <span style={{ fontSize: 9, fontWeight: 600, padding: "2px 6px", borderRadius: 4, background: bg, color }}>{children}</span>
+  );
+}
+
+function AttrRow({ label, accent, children }: { label: string; accent: string; children: React.ReactNode }) {
+  return (
+    <div style={{ marginBottom: 10, paddingLeft: 10, borderLeft: `2px solid ${accent}` }}>
+      <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: accent, marginBottom: 4 }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 13, color: "var(--text)" }}>{children}</div>
+    </div>
   );
 }

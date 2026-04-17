@@ -14,6 +14,7 @@ import { ProjectModules } from "@/components/modules/project-modules";
 import { SessionLogList } from "@/components/session-log-list";
 import { type DetailTask } from "@/components/task/task-detail";
 import { Fab } from "@/components/fab";
+import { IdBadge } from "@/components/id-badge";
 import { useBreakpoint } from "@/hooks/useBreakpoint";
 import { cachedFetch, invalidateCache } from "@/lib/cache";
 import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh";
@@ -425,6 +426,18 @@ export default function ProjectDetailPage() {
           <EmptyState message="Project not found." />
         ) : project ? (
           <>
+            {/* ID + vault path strip — pain #4 (IDs visible everywhere) */}
+            <div className="px-4 pt-3 flex items-center gap-1.5 flex-wrap">
+              <IdBadge value={project.child_key} label="project_key" kind="key" />
+              {project.current_version && <IdBadge value={project.current_version} label="version" kind="code" />}
+              {project.build_phase && (
+                <span className="text-[9px] font-bold uppercase tracking-[0.05em] px-1.5 py-[1px] rounded-[4px] bg-[var(--purple-dim)] text-[var(--purple)]">
+                  {project.build_phase}
+                </span>
+              )}
+              <span className="text-[10px] text-[var(--text3)]">entity</span>
+            </div>
+
             {/* Detailed project header card */}
             <div className="px-4 pt-3">
               <ProjectCard
@@ -476,13 +489,22 @@ export default function ProjectDetailPage() {
               </div>
             )}
 
-            {/* Missions */}
+            {/* Missions — expand to show full task + subtask tree (pain #2) */}
             {project.missions && project.missions.length > 0 && (
               <div className="px-4 pt-3">
-                <h2 className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-[0.07em] mb-2">Missions</h2>
+                <h2 className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-[0.07em] mb-2">
+                  Missions <span className="text-[var(--text3)] font-normal normal-case">· entity → mission → task → subtask</span>
+                </h2>
                 <div className="space-y-1.5">
                   {project.missions.map((m) => {
                     const isExp = expandedMission === m.mission;
+                    // Pull nested tasks (with subtasks) from the full project tree by mission name
+                    const nestedForMission = [
+                      ...project.tasks.this_week,
+                      ...project.tasks.this_month,
+                      ...project.tasks.parked,
+                    ].filter((t) => t.mission === m.mission);
+                    const subtaskCount = nestedForMission.reduce((n, t) => n + countSubtree(t.sub_tasks), 0);
                     return (
                       <div key={m.mission}>
                         <button
@@ -490,31 +512,36 @@ export default function ProjectDetailPage() {
                           className="w-full text-left px-3 py-2.5 rounded-[10px] bg-[var(--card)] border border-[var(--border)] hover:border-[var(--border2)] transition-all"
                         >
                           <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1.5 min-w-0">
                               <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className={`transition-transform shrink-0 ${isExp ? "rotate-90" : ""}`}>
                                 <path d="M3 1L7 5L3 9" stroke="var(--text3)" strokeWidth="1.5" strokeLinecap="round" />
                               </svg>
-                              <span className="text-[13px] font-semibold text-[var(--text)]">{m.mission}</span>
+                              <span className="text-[13px] font-semibold text-[var(--text)] truncate">{m.mission}</span>
                             </div>
-                            <div className="flex items-center gap-2">
-                              {m.p0 > 0 && <span className="w-[6px] h-[6px] rounded-full" style={{ backgroundColor: PRIORITY_MISSION.P0 }} />}
-                              {m.p1 > 0 && <span className="w-[6px] h-[6px] rounded-full" style={{ backgroundColor: PRIORITY_MISSION.P1 }} />}
-                              <span className="text-[11px] text-[var(--text3)] tabular-nums">{m.task_count} tasks</span>
+                            <div className="flex items-center gap-2 shrink-0">
+                              {m.p0 > 0 && <span className="w-[6px] h-[6px] rounded-full" style={{ backgroundColor: PRIORITY_MISSION.P0 }} title={`${m.p0} P0`} />}
+                              {m.p1 > 0 && <span className="w-[6px] h-[6px] rounded-full" style={{ backgroundColor: PRIORITY_MISSION.P1 }} title={`${m.p1} P1`} />}
+                              <span className="text-[11px] text-[var(--text3)] tabular-nums">
+                                {m.task_count} task{m.task_count === 1 ? '' : 's'}{subtaskCount > 0 && ` · ${subtaskCount} sub`}
+                              </span>
                             </div>
                           </div>
                         </button>
                         {isExp && (
-                          <div className="mt-1 space-y-0.5 pl-3">
-                            {m.tasks.map((t) => (
-                              <div key={t.id} className="flex items-center gap-2 px-3 py-1.5 rounded-[8px] hover:bg-[var(--card)]/50 transition-colors">
-                                {t.priority && <span className="w-[6px] h-[6px] rounded-full shrink-0" style={{ backgroundColor: PRIORITY_MISSION[t.priority] || "var(--border2)" }} />}
-                                {t.task_code && <span className="text-[10px] font-mono text-[var(--accent)] shrink-0">{t.task_code}</span>}
-                                <span className="text-[12px] text-[var(--text2)] line-clamp-1 flex-1">{t.text}</span>
-                                <span className="text-[10px] text-[var(--text3)] px-1.5 py-0.5 rounded bg-[var(--card)] shrink-0">
-                                  {t.bucket === "THIS_WEEK" ? "Week" : t.bucket === "THIS_MONTH" ? "Month" : "Parked"}
-                                </span>
-                              </div>
-                            ))}
+                          <div className="mt-1 ml-3 pl-3 border-l border-[var(--border)] space-y-0.5 py-1">
+                            {nestedForMission.length === 0 ? (
+                              <p className="text-[11px] text-[var(--text3)] px-2 py-1">No open tasks in this mission.</p>
+                            ) : (
+                              nestedForMission.map((t) => (
+                                <MissionTaskRow
+                                  key={t.id}
+                                  task={t}
+                                  depth={0}
+                                  onOpen={() => setSelectedTask(t)}
+                                  onToggle={handleToggleTask}
+                                />
+                              ))
+                            )}
                           </div>
                         )}
                       </div>
@@ -859,6 +886,68 @@ const PRIORITY_COLORS: Record<string, string> = {
   P1: 'var(--orange)',
   P2: 'var(--yellow)',
 };
+
+/* ── Tree helpers ── */
+
+function countSubtree(subs: NestedTask[]): number {
+  let n = 0;
+  for (const s of subs) { n += 1 + countSubtree(s.sub_tasks); }
+  return n;
+}
+
+function MissionTaskRow({ task, depth, onOpen, onToggle }: {
+  task: NestedTask;
+  depth: number;
+  onOpen: () => void;
+  onToggle: (id: string, currentCompleted: boolean) => void;
+}) {
+  const [expanded, setExpanded] = useState(depth < 1);
+  const hasSubs = task.sub_tasks.length > 0;
+  return (
+    <>
+      <div
+        className="flex items-center gap-2 py-1.5 px-2 rounded-[6px] hover:bg-[var(--card)] transition-colors group"
+        style={{ paddingLeft: `${8 + depth * 18}px` }}
+      >
+        {hasSubs ? (
+          <button onClick={() => setExpanded(!expanded)} className="w-4 h-4 flex items-center justify-center text-[var(--text3)] shrink-0">
+            <svg width="8" height="8" viewBox="0 0 10 10" fill="none" className={`transition-transform ${expanded ? 'rotate-90' : ''}`}>
+              <path d="M3 1L7 5L3 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </button>
+        ) : (
+          <span className="w-4 shrink-0" />
+        )}
+        <button
+          onClick={(e) => { e.stopPropagation(); onToggle(task.id, task.completed); }}
+          className={`w-[14px] h-[14px] rounded border flex items-center justify-center shrink-0 ${
+            task.completed ? 'border-[var(--green)] bg-[var(--green)]' : 'border-[var(--border2)]'
+          }`}
+        >
+          {task.completed && (
+            <svg width="8" height="8" viewBox="0 0 10 10" fill="none">
+              <path d="M2 5L4 7L8 3" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          )}
+        </button>
+        {task.priority && (
+          <span className="w-[6px] h-[6px] rounded-full shrink-0" style={{ backgroundColor: PRIORITY_COLORS[task.priority] || 'var(--text3)' }} />
+        )}
+        {task.task_code && <IdBadge value={task.task_code} label="task_code" kind="code" size="xs" />}
+        <button onClick={onOpen}
+          className={`text-[12px] text-left flex-1 min-w-0 truncate ${task.completed ? 'text-[var(--text3)] line-through' : 'text-[var(--text2)] hover:text-[var(--text)]'}`}>
+          {task.text}
+        </button>
+        <span className="text-[9px] text-[var(--text3)] px-1.5 py-[1px] rounded bg-[var(--bg)] shrink-0">
+          {task.bucket === 'THIS_WEEK' ? 'W' : task.bucket === 'THIS_MONTH' ? 'M' : 'P'}
+        </span>
+      </div>
+      {expanded && hasSubs && task.sub_tasks.map((sub) => (
+        <MissionTaskRow key={sub.id} task={sub} depth={depth + 1} onOpen={onOpen} onToggle={onToggle} />
+      ))}
+    </>
+  );
+}
 
 /* ── Task Row ── */
 

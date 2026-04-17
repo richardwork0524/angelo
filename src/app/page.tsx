@@ -7,8 +7,8 @@ import { ColorLegend } from '@/components/color-legend';
 import { SessionPopup } from '@/components/popups/session-popup';
 import { ChainPopup } from '@/components/popups/chain-popup';
 import { SystemPopup } from '@/components/popups/system-popup';
-import { HandoffCard } from '@/components/handoff-card';
 import { StepTracker } from '@/components/step-tracker';
+import { IdBadge } from '@/components/id-badge';
 import { patchHandoff } from '@/lib/mutate';
 import { SURFACE_COLORS } from '@/lib/constants';
 import { cachedFetch } from '@/lib/cache';
@@ -19,6 +19,7 @@ import type { Handoff } from '@/lib/types';
 
 interface Session {
   id: string;
+  session_code?: string | null;
   project_key: string;
   session_date: string;
   title: string;
@@ -32,6 +33,7 @@ interface Session {
   tags: string[] | null;
   mission: string | null;
   handoff_context: Record<string, unknown> | null;
+  task_ids?: string[] | null;
 }
 
 interface Chain {
@@ -197,60 +199,56 @@ export default function HomePage() {
         <LegendItem color="var(--purple)" label="Cowork" />
       </div>
 
-      {/* Content: Hero + 2x2 */}
+      {/* Content: Hero strip (dual: mounted + last session) + 2x2 */}
       <div className={`flex-1 flex flex-col gap-4 min-h-0 ${isDesktop ? 'p-5 overflow-hidden' : 'p-3 overflow-y-auto'}`}>
 
-        {/* Hero: Mounted handoff OR last session fallback */}
-        {mounted ? (
-          /* ── Mounted Handoff Hero ── */
-          <div className="shrink-0 rounded-[16px] border border-[var(--accent)] bg-[var(--card)] shadow-lg"
-               style={{ boxShadow: '0 0 0 1px var(--accent-dim), 0 2px 12px rgba(0,0,0,.3)' }}>
-            <div className="p-5">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.05em] text-[var(--accent)]">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                  {mounted.status === 'picked_up' ? 'Mounted' : 'Active Handoff'}
+        {/* Hero strip: ALWAYS show Last Session; ALSO show Mounted Handoff if any.
+            Addresses pain #1: see both current mounted work AND last session state. */}
+        <div className={`shrink-0 grid gap-4 ${isDesktop && mounted && hero ? 'grid-cols-2' : 'grid-cols-1'}`}>
+          {/* Mounted handoff card (when any exists) */}
+          {mounted && (
+            <div className="rounded-[16px] border border-[var(--accent)] bg-[var(--card)] shadow-lg"
+                 style={{ boxShadow: '0 0 0 1px var(--accent-dim), 0 2px 12px rgba(0,0,0,.3)' }}>
+              <div className="p-5">
+                <div className="flex items-center gap-2 mb-3 flex-wrap">
+                  <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.05em] text-[var(--accent)]">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    {mounted.status === 'picked_up' ? 'Mounted — current work' : 'Active handoff'}
+                  </div>
+                  <IdBadge value={mounted.handoff_code} label="handoff_code" kind="code" />
+                  <IdBadge value={mounted.project_key} label="project_key" kind="key" size="xs" />
+                  <span className="text-[10px] text-[var(--text3)] uppercase tracking-[0.05em]">{mounted.scope_type}</span>
                 </div>
-                {mounted.handoff_code && (
-                  <span className="text-[9px] font-mono font-bold px-1.5 py-[1px] rounded-[4px] bg-[var(--accent-dim)] text-[var(--accent)]">
-                    {mounted.handoff_code}
-                  </span>
+                <h2 className="text-[17px] font-bold mb-3 truncate">{mounted.scope_name}</h2>
+                <div className="mb-3">
+                  <StepTracker steps={heroSteps} completed={mounted.sections_completed} />
+                </div>
+                {mounted.notes && (
+                  <p className="text-[12px] text-[var(--text3)] leading-[1.5] line-clamp-2 mb-3">{mounted.notes}</p>
                 )}
-                <span className="text-[10px] text-[var(--text3)]">{mounted.project_key} &middot; {mounted.scope_type}</span>
-              </div>
-              <h2 className="text-[17px] font-bold mb-3 truncate">{mounted.scope_name}</h2>
-
-              {/* Step tracker */}
-              <div className="mb-3">
-                <StepTracker steps={heroSteps} completed={mounted.sections_completed} />
-              </div>
-
-              {/* Notes */}
-              {mounted.notes && (
-                <p className="text-[12px] text-[var(--text3)] leading-[1.5] line-clamp-2 mb-3">{mounted.notes}</p>
-              )}
-
-              <div className="flex gap-1 flex-wrap">
-                {mounted.entry_point && <Tag bg="var(--purple-dim)" color="var(--purple)">{mounted.entry_point}</Tag>}
-                {mounted.version && <Tag bg="var(--accent-dim)" color="var(--accent)">{mounted.version}</Tag>}
-                <Tag bg="var(--green-dim)" color="var(--green)">{mounted.sections_completed}/{mounted.sections_total}</Tag>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {mounted.entry_point && <Tag bg="var(--purple-dim)" color="var(--purple)">{mounted.entry_point}</Tag>}
+                  {mounted.version && <Tag bg="var(--accent-dim)" color="var(--accent)">{mounted.version}</Tag>}
+                  <Tag bg="var(--green-dim)" color="var(--green)">{mounted.sections_completed}/{mounted.sections_total}</Tag>
+                  {mounted.vault_path && <IdBadge value={mounted.vault_path} label="vault" kind="path" size="xs" />}
+                </div>
               </div>
             </div>
-          </div>
-        ) : hero ? (
-          /* ── Session Fallback Hero ── */
-          <div className="shrink-0 rounded-[16px] border border-[var(--accent)] bg-[var(--card)] shadow-lg"
-               style={{ boxShadow: '0 0 0 1px var(--accent-dim), 0 2px 12px rgba(0,0,0,.3)' }}>
-            <div className={`${isDesktop ? 'flex gap-5' : 'flex flex-col gap-3'} p-5`}>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.05em] text-[var(--accent)] mb-1.5">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-                  Continue from last session
+          )}
+
+          {/* Last session card (always present when any session exists) */}
+          {hero && (
+            <div className={`rounded-[16px] bg-[var(--card)] shadow-lg ${mounted ? 'border border-[var(--border2)]' : 'border border-[var(--accent)]'}`}
+                 style={{ boxShadow: mounted ? '0 2px 12px rgba(0,0,0,.2)' : '0 0 0 1px var(--accent-dim), 0 2px 12px rgba(0,0,0,.3)' }}>
+              <div className="p-5 h-full flex flex-col">
+                <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.05em] text-[var(--green)] mb-2 flex-wrap">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  Last session
+                  <IdBadge value={hero.session_code} label="session_code" kind="code" />
+                  <IdBadge value={hero.project_key} label="project_key" kind="key" size="xs" />
                 </div>
                 <h2 className="text-[17px] font-bold mb-1 truncate">{hero.title}</h2>
                 <div className="flex items-center gap-2 text-[11px] text-[var(--text2)] mb-2 flex-wrap">
-                  <span style={{ color: 'var(--accent)' }}>{hero.project_key}</span>
-                  <span>&middot;</span>
                   <span>{hero.session_date}</span>
                   {hero.cost_usd && (
                     <>
@@ -260,26 +258,43 @@ export default function HomePage() {
                       </span>
                     </>
                   )}
+                  {hero.task_ids && hero.task_ids.length > 0 && (
+                    <>
+                      <span>&middot;</span>
+                      <span style={{ color: 'var(--accent)' }}>{hero.task_ids.length} task{hero.task_ids.length === 1 ? '' : 's'} touched</span>
+                    </>
+                  )}
                 </div>
                 {hero.summary && (
-                  <p className="text-[12px] text-[var(--text3)] leading-[1.5] line-clamp-2">{hero.summary}</p>
+                  <p className="text-[12px] text-[var(--text3)] leading-[1.5] line-clamp-2 flex-1">{hero.summary}</p>
                 )}
-                <div className="flex gap-1 mt-2 flex-wrap">
-                  {hero.surface && <Tag bg="var(--accent-dim)" color="var(--accent)">{hero.surface}</Tag>}
-                  {hero.entry_point && <Tag bg="var(--purple-dim)" color="var(--purple)">{hero.entry_point}</Tag>}
+                <div className="flex items-center gap-2 mt-3 flex-wrap">
+                  <div className="flex gap-1 flex-wrap">
+                    {hero.surface && <Tag bg="var(--accent-dim)" color="var(--accent)">{hero.surface}</Tag>}
+                    {hero.entry_point && <Tag bg="var(--purple-dim)" color="var(--purple)">{hero.entry_point}</Tag>}
+                    {hero.mission && <Tag bg="var(--green-dim)" color="var(--green)">{hero.mission}</Tag>}
+                  </div>
+                  <div className="flex-1" />
+                  <button onClick={handleCopyHandoff}
+                          className="px-3 py-1.5 rounded-[8px] bg-[var(--accent)] text-white text-[11px] font-semibold hover:opacity-90 transition-opacity">
+                    {copyLabel}
+                  </button>
+                  <button onClick={() => setPopupSession(hero)}
+                          className="px-3 py-1.5 rounded-[8px] bg-[var(--accent-dim)] text-[var(--accent)] text-[11px] font-semibold hover:bg-[var(--accent)] hover:text-white transition-colors">
+                    View &rarr;
+                  </button>
                 </div>
               </div>
-              <div className={`flex ${isDesktop ? 'flex-col items-end justify-center' : 'flex-row items-center'} gap-2 shrink-0`}>
-                <button onClick={handleCopyHandoff} className="px-4 py-2 rounded-[10px] bg-[var(--accent)] text-white text-[12px] font-semibold hover:opacity-90 transition-opacity">
-                  {copyLabel}
-                </button>
-                <button onClick={() => setPopupSession(hero)} className="px-4 py-2 rounded-[10px] bg-[var(--accent-dim)] text-[var(--accent)] text-[12px] font-semibold hover:bg-[var(--accent)] hover:text-white transition-colors">
-                  View Session &rarr;
-                </button>
-              </div>
             </div>
-          </div>
-        ) : null}
+          )}
+
+          {/* Nothing yet */}
+          {!mounted && !hero && (
+            <div className="rounded-[16px] border border-dashed border-[var(--border2)] p-6 text-center text-[var(--text3)]">
+              <p className="text-[13px]">No mounted handoff and no sessions yet. Start a session from Claude Code.</p>
+            </div>
+          )}
+        </div>
 
         {/* 2x2 Grid: Handoffs TL, Sessions TR, Chains BL, Routine+System BR */}
         <div className={`flex-1 grid gap-3 min-h-0 ${isDesktop ? 'grid-cols-2 grid-rows-2 overflow-hidden' : 'grid-cols-1 auto-rows-min'}`}>

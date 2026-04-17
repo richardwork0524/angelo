@@ -8,7 +8,7 @@ export async function GET() {
       // 1. Recent sessions (latest 5)
       supabase
         .from("angelo_session_logs")
-        .select("id, session_code, project_key, session_date, title, surface, summary, chain_id, entry_point, input_tokens, output_tokens, cost_usd, tags, mission, handoff_context, structured_summary, project_keys_seen")
+        .select("id, session_code, project_key, session_date, title, surface, summary, chain_id, entry_point, input_tokens, output_tokens, cost_usd, tags, mission, handoff_context, structured_summary, project_keys_seen, task_ids")
         .order("created_at", { ascending: false })
         .limit(5),
 
