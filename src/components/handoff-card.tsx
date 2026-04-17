@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { HandoffPopup } from '@/components/popups/handoff-popup';
+import { StepTrackerCompact } from '@/components/step-tracker';
 import type { Handoff } from '@/lib/types';
 
 function timeAgo(date: string): string {
@@ -14,19 +15,17 @@ function timeAgo(date: string): string {
   return `${days}d ago`;
 }
 
-const STATUS_DOT: Record<string, string> = {
-  open: 'var(--orange)',
-  picked_up: 'var(--accent)',
-  completed: 'var(--green)',
-};
-
 export function HandoffCard({ handoff, onUpdate }: { handoff: Handoff; onUpdate?: () => void }) {
   const [popupOpen, setPopupOpen] = useState(false);
 
-  const pct = handoff.sections_total > 0
-    ? Math.round((handoff.sections_completed / handoff.sections_total) * 100)
-    : 0;
-  const dotColor = STATUS_DOT[handoff.status] || 'var(--text3)';
+  // Build steps from sections_remaining + completed count
+  const allSteps = [
+    ...Array.from({ length: handoff.sections_completed }, (_, i) => ({
+      name: `Step ${i + 1}`,
+      status: 'done',
+    })),
+    ...(handoff.sections_remaining || []),
+  ];
 
   return (
     <>
@@ -55,30 +54,13 @@ export function HandoffCard({ handoff, onUpdate }: { handoff: Handoff; onUpdate?
           <span>{timeAgo(handoff.created_at)}</span>
         </div>
 
-        {/* Progress bar */}
-        <div className="w-full h-1 rounded-full bg-[var(--border)] mb-2 overflow-hidden">
-          <div
-            className="h-full rounded-full transition-all"
-            style={{ width: `${pct}%`, background: dotColor }}
-          />
+        {/* Step tracker */}
+        <div className="mb-1">
+          <StepTrackerCompact steps={allSteps} completed={handoff.sections_completed} />
         </div>
 
-        {/* Bottom row: progress dots + fraction */}
-        <div className="flex items-center justify-between">
-          <div className="flex gap-1">
-            {Array.from({ length: Math.min(handoff.sections_total, 12) }).map((_, i) => (
-              <div
-                key={i}
-                className="w-1.5 h-1.5 rounded-full"
-                style={{
-                  background: i < handoff.sections_completed ? dotColor : 'var(--border)',
-                }}
-              />
-            ))}
-            {handoff.sections_total > 12 && (
-              <span className="text-[8px] text-[var(--text3)] ml-0.5">+{handoff.sections_total - 12}</span>
-            )}
-          </div>
+        {/* Fraction */}
+        <div className="flex justify-end">
           <span className="text-[10px] font-medium text-[var(--text3)]">
             {handoff.sections_completed}/{handoff.sections_total}
           </span>

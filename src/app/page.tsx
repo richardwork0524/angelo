@@ -8,6 +8,8 @@ import { SessionPopup } from '@/components/popups/session-popup';
 import { ChainPopup } from '@/components/popups/chain-popup';
 import { SystemPopup } from '@/components/popups/system-popup';
 import { HandoffCard } from '@/components/handoff-card';
+import { StepTracker } from '@/components/step-tracker';
+import { patchHandoff } from '@/lib/mutate';
 import { SURFACE_COLORS } from '@/lib/constants';
 import { cachedFetch } from '@/lib/cache';
 import { useBreakpoint } from '@/hooks/useBreakpoint';
@@ -71,6 +73,7 @@ interface HookLog {
 interface HomeData {
   hero: Session | null;
   latest_handoff: Handoff | null;
+  open_handoffs: Handoff[];
   recent_sessions: Session[];
   chains: Chain[];
   token_stats: TokenStats;
@@ -158,6 +161,20 @@ export default function HomePage() {
   }
 
   const hero = data.hero;
+  const mounted = data.latest_handoff;
+
+  // Build all steps for mounted handoff hero
+  const heroSteps = mounted ? [
+    ...Array.from({ length: mounted.sections_completed }, (_, i) => ({
+      name: `Done ${i + 1}`,
+      status: 'done',
+    })),
+    ...(mounted.sections_remaining || []),
+  ] : [];
+
+  function handleMount(handoff: Handoff) {
+    patchHandoff(handoff.id, 'picked_up', { onSuccess: () => fetchHome() });
+  }
 
   return (
     <div className="flex flex-col h-full overflow-hidden bg-[var(--bg)]">
@@ -182,8 +199,46 @@ export default function HomePage() {
 
       {/* Content: Hero + 2x2 */}
       <div className={`flex-1 flex flex-col gap-4 min-h-0 ${isDesktop ? 'p-5 overflow-hidden' : 'p-3 overflow-y-auto'}`}>
-        {/* Hero Handoff Card */}
-        {hero && (
+
+        {/* Hero: Mounted handoff OR last session fallback */}
+        {mounted ? (
+          /* ── Mounted Handoff Hero ── */
+          <div className="shrink-0 rounded-[16px] border border-[var(--accent)] bg-[var(--card)] shadow-lg"
+               style={{ boxShadow: '0 0 0 1px var(--accent-dim), 0 2px 12px rgba(0,0,0,.3)' }}>
+            <div className="p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.05em] text-[var(--accent)]">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  {mounted.status === 'picked_up' ? 'Mounted' : 'Active Handoff'}
+                </div>
+                {mounted.handoff_code && (
+                  <span className="text-[9px] font-mono font-bold px-1.5 py-[1px] rounded-[4px] bg-[var(--accent-dim)] text-[var(--accent)]">
+                    {mounted.handoff_code}
+                  </span>
+                )}
+                <span className="text-[10px] text-[var(--text3)]">{mounted.project_key} &middot; {mounted.scope_type}</span>
+              </div>
+              <h2 className="text-[17px] font-bold mb-3 truncate">{mounted.scope_name}</h2>
+
+              {/* Step tracker */}
+              <div className="mb-3">
+                <StepTracker steps={heroSteps} completed={mounted.sections_completed} />
+              </div>
+
+              {/* Notes */}
+              {mounted.notes && (
+                <p className="text-[12px] text-[var(--text3)] leading-[1.5] line-clamp-2 mb-3">{mounted.notes}</p>
+              )}
+
+              <div className="flex gap-1 flex-wrap">
+                {mounted.entry_point && <Tag bg="var(--purple-dim)" color="var(--purple)">{mounted.entry_point}</Tag>}
+                {mounted.version && <Tag bg="var(--accent-dim)" color="var(--accent)">{mounted.version}</Tag>}
+                <Tag bg="var(--green-dim)" color="var(--green)">{mounted.sections_completed}/{mounted.sections_total}</Tag>
+              </div>
+            </div>
+          </div>
+        ) : hero ? (
+          /* ── Session Fallback Hero ── */
           <div className="shrink-0 rounded-[16px] border border-[var(--accent)] bg-[var(--card)] shadow-lg"
                style={{ boxShadow: '0 0 0 1px var(--accent-dim), 0 2px 12px rgba(0,0,0,.3)' }}>
             <div className={`${isDesktop ? 'flex gap-5' : 'flex flex-col gap-3'} p-5`}>
@@ -205,12 +260,6 @@ export default function HomePage() {
                       </span>
                     </>
                   )}
-                  {hero.chain_id && (
-                    <>
-                      <span>&middot;</span>
-                      <span style={{ color: 'var(--purple)' }}>chain: {hero.chain_id}</span>
-                    </>
-                  )}
                 </div>
                 {hero.summary && (
                   <p className="text-[12px] text-[var(--text3)] leading-[1.5] line-clamp-2">{hero.summary}</p>
@@ -218,8 +267,6 @@ export default function HomePage() {
                 <div className="flex gap-1 mt-2 flex-wrap">
                   {hero.surface && <Tag bg="var(--accent-dim)" color="var(--accent)">{hero.surface}</Tag>}
                   {hero.entry_point && <Tag bg="var(--purple-dim)" color="var(--purple)">{hero.entry_point}</Tag>}
-                  {hero.mission && <Tag bg="var(--green-dim)" color="var(--green)">{hero.mission}</Tag>}
-                  {hero.chain_id && <Tag bg="var(--green-dim)" color="var(--green)">Chain</Tag>}
                 </div>
               </div>
               <div className={`flex ${isDesktop ? 'flex-col items-end justify-center' : 'flex-row items-center'} gap-2 shrink-0`}>
@@ -229,33 +276,62 @@ export default function HomePage() {
                 <button onClick={() => setPopupSession(hero)} className="px-4 py-2 rounded-[10px] bg-[var(--accent-dim)] text-[var(--accent)] text-[12px] font-semibold hover:bg-[var(--accent)] hover:text-white transition-colors">
                   View Session &rarr;
                 </button>
-                {hero.chain_id && (
-                  <button onClick={() => {
-                    const chain = data.chains.find(c => c.chain_id === hero.chain_id);
-                    if (chain) setPopupChain(chain);
-                  }} className="px-4 py-2 rounded-[10px] bg-[var(--purple-dim)] text-[var(--purple)] text-[12px] font-semibold hover:bg-[var(--purple)] hover:text-white transition-colors">
-                    View Chain &rarr;
-                  </button>
-                )}
               </div>
             </div>
           </div>
-        )}
+        ) : null}
 
-        {/* Latest Handoff */}
-        {data.latest_handoff && (
-          <div className="shrink-0">
-            <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.05em] text-[var(--orange)] mb-1.5 px-1">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-              Active Handoff
-            </div>
-            <HandoffCard handoff={data.latest_handoff} onUpdate={fetchHome} />
-          </div>
-        )}
-
-        {/* 2x2 Secondary Grid */}
+        {/* 2x2 Grid: Handoffs TL, Sessions TR, Chains BL, Routine+System BR */}
         <div className={`flex-1 grid gap-3 min-h-0 ${isDesktop ? 'grid-cols-2 grid-rows-2 overflow-hidden' : 'grid-cols-1 auto-rows-min'}`}>
-          {/* 1: Active Chains */}
+          {/* TL: Handoffs */}
+          <SecCard
+            icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>}
+            iconBg="var(--orange-dim)" iconColor="var(--orange)"
+            title="Handoffs" count={(data.open_handoffs || []).length}
+            countColor="var(--orange)"
+            footer={<button onClick={() => router.push('/handoffs')} className="text-[11px] font-semibold text-[var(--accent)] hover:opacity-80">All &rarr;</button>}
+          >
+            {(data.open_handoffs || []).length === 0 ? (
+              <Empty>No open handoffs</Empty>
+            ) : (
+              (data.open_handoffs || []).slice(0, 3).map((h) => (
+                <ListItem key={h.id}
+                  dot={h.status === 'picked_up' ? 'var(--accent)' : 'var(--orange)'}
+                  title={h.scope_name}
+                  sub={<>{h.handoff_code} <span>&middot;</span> {h.project_key} <span>&middot;</span> {h.sections_completed}/{h.sections_total}</>}
+                  right={h.status === 'open' ? (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleMount(h); }}
+                      className="text-[9px] font-bold px-2 py-0.5 rounded-[4px] bg-[var(--accent)] text-white hover:opacity-80 transition-opacity"
+                    >
+                      Mount
+                    </button>
+                  ) : (
+                    <Tag bg="var(--accent-dim)" color="var(--accent)">Mounted</Tag>
+                  )}
+                />
+              ))
+            )}
+          </SecCard>
+
+          {/* TR: Recent Sessions */}
+          <SecCard
+            icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>}
+            iconBg="var(--green-dim)" iconColor="var(--green)"
+            title="Recent Sessions" count={data.recent_sessions.length + (data.hero ? 1 : 0)}
+            footer={<button onClick={() => router.push('/dashboard')} className="text-[11px] font-semibold text-[var(--accent)] hover:opacity-80">All &rarr;</button>}
+          >
+            <ExpandableList items={data.recent_sessions} max={3} emptyMsg="No recent sessions" renderItem={(s) => (
+              <ListItem key={s.id}
+                dot={SURFACE_COLORS[s.surface || ''] || 'var(--text3)'}
+                title={s.title}
+                sub={<>{s.session_date} <span>&middot;</span> {s.project_key}{s.input_tokens ? <> <span>&middot;</span> <span style={{ color: 'var(--accent)' }}>{fmtTokens(s.input_tokens)}</span></> : null}</>}
+                onClick={() => setPopupSession(s)}
+              />
+            )} />
+          </SecCard>
+
+          {/* BL: Active Chains */}
           <SecCard
             icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>}
             iconBg="var(--purple-dim)" iconColor="var(--purple)"
@@ -273,56 +349,34 @@ export default function HomePage() {
             {data.chains.length === 0 && <Empty>No active chains</Empty>}
           </SecCard>
 
-          {/* 2: Recent Sessions */}
-          <SecCard
-            icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>}
-            iconBg="var(--green-dim)" iconColor="var(--green)"
-            title="Recent Sessions" count={data.recent_sessions.length + (data.hero ? 1 : 0)}
-            footer={<button onClick={() => router.push('/dashboard')} className="text-[11px] font-semibold text-[var(--accent)] hover:opacity-80">All &rarr;</button>}
-          >
-            <ExpandableList items={data.recent_sessions} max={3} emptyMsg="No recent sessions" renderItem={(s) => (
-              <ListItem key={s.id}
-                dot={SURFACE_COLORS[s.surface || ''] || 'var(--text3)'}
-                title={s.title}
-                sub={<>{s.session_date} <span>&middot;</span> {s.project_key}{s.input_tokens ? <> <span>&middot;</span> <span style={{ color: 'var(--accent)' }}>{fmtTokens(s.input_tokens)}</span></> : null}</>}
-                onClick={() => setPopupSession(s)}
-              />
-            )} />
-          </SecCard>
-
-          {/* 3: Routine */}
-          <SecCard
-            icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.83 2.83 0 114 4L7.5 20.5 2 22l1.5-5.5z"/></svg>}
-            iconBg="var(--cyan-dim)" iconColor="var(--cyan)"
-            title="Routine" count={data.routine.length}
-          >
-            <ExpandableList items={data.routine} max={4} emptyMsg="No routine tasks" renderItem={(t) => (
-              <ListItem key={t.id}
-                dot={t.priority === 'P0' ? 'var(--red)' : t.priority === 'P1' ? 'var(--orange)' : 'var(--cyan)'}
-                title={t.text}
-                sub={<>{t.project_key}{t.mission ? <> <span>&middot;</span> {t.mission}</> : null}</>}
-              />
-            )} />
-          </SecCard>
-
-          {/* 4: System */}
+          {/* BR: Routine + System */}
           <SecCard
             icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>}
             iconBg={data.system.health === 'healthy' ? 'var(--green-dim)' : 'var(--red-dim)'}
             iconColor={data.system.health === 'healthy' ? 'var(--green)' : 'var(--red)'}
-            title="System"
-            count={data.system.error_count}
-            countColor={data.system.error_count > 0 ? 'var(--red)' : 'var(--green)'}
+            title="Routine & System"
+            count={data.routine.length + data.system.error_count}
+            countColor={data.system.error_count > 0 ? 'var(--red)' : 'var(--text)'}
             onHeaderClick={() => setShowSystemPopup(true)}
           >
+            {/* System health badge */}
             <div className="flex items-center gap-2 mb-2">
               <span className="w-[7px] h-[7px] rounded-full" style={{ background: data.system.health === 'healthy' ? 'var(--green)' : 'var(--red)' }} />
               <span className="text-[12px] font-semibold" style={{ color: data.system.health === 'healthy' ? 'var(--green)' : 'var(--red)' }}>
                 {data.system.health === 'healthy' ? 'All systems healthy' : `${data.system.error_count} error(s)`}
               </span>
             </div>
-            {data.system.recent_hooks.slice(0, 3).map((h, i) => (
-              <ListItem key={i}
+            {/* Routine tasks */}
+            {data.routine.slice(0, 2).map((t) => (
+              <ListItem key={t.id}
+                dot={t.priority === 'P0' ? 'var(--red)' : t.priority === 'P1' ? 'var(--orange)' : 'var(--cyan)'}
+                title={t.text}
+                sub={<>{t.project_key}{t.mission ? <> <span>&middot;</span> {t.mission}</> : null}</>}
+              />
+            ))}
+            {/* Recent hooks */}
+            {data.system.recent_hooks.slice(0, 2).map((h, i) => (
+              <ListItem key={`hook-${i}`}
                 dot={h.status === 'error' ? 'var(--red)' : 'var(--green)'}
                 title={h.hook_name}
                 sub={<>{h.detail || h.action} <span>&middot;</span> {timeAgo(h.created_at)}</>}

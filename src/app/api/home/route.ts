@@ -43,13 +43,13 @@ export async function GET() {
         .order("priority", { ascending: true })
         .limit(5),
 
-      // 6. Latest open handoff for hero area
+      // 6. Open/picked_up handoffs for hero + grid
       supabase
         .from("angelo_handoffs")
         .select("id, handoff_code, created_by_session_id, project_key, scope_type, scope_name, entry_point, version, sections_total, sections_completed, sections_remaining, source, status, picked_up_by_session_id, notes, vault_path, created_at, updated_at")
         .in("status", ["open", "picked_up"])
         .order("created_at", { ascending: false })
-        .limit(1),
+        .limit(5),
     ]);
 
     const sessions = sessionsRes.data || [];
@@ -57,7 +57,10 @@ export async function GET() {
     const tokenDays = tokenStatsRes.data || [];
     const hookLogs = hookLogsRes.data || [];
     const routineTasks = routineRes.data || [];
-    const latestHandoff = latestHandoffRes.data?.[0] || null;
+    const openHandoffs = latestHandoffRes.data || [];
+    // Hero mount: picked_up first, then latest open
+    const mountedHandoff = openHandoffs.find(h => h.status === 'picked_up') || null;
+    const latestHandoff = mountedHandoff || openHandoffs[0] || null;
 
     // Hero: latest session
     const hero = sessions[0] || null;
@@ -133,6 +136,7 @@ export async function GET() {
     return NextResponse.json({
       hero,
       latest_handoff: latestHandoff,
+      open_handoffs: openHandoffs,
       recent_sessions: sessions.slice(1, 5),
       chains,
       token_stats: {
