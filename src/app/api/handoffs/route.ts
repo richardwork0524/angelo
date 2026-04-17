@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
     let query = supabase
       .from("angelo_handoffs")
       .select(
-        "id, created_by_session_id, project_key, scope_type, scope_name, entry_point, version, sections_total, sections_completed, sections_remaining, source, status, picked_up_by_session_id, notes, vault_path, created_at, updated_at",
+        "id, handoff_code, created_by_session_id, project_key, scope_type, scope_name, entry_point, version, sections_total, sections_completed, sections_remaining, source, status, picked_up_by_session_id, notes, vault_path, created_at, updated_at",
         { count: "exact" }
       )
       .order("created_at", { ascending: false })

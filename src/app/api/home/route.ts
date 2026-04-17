@@ -4,11 +4,11 @@ import { supabase } from "@/lib/supabase";
 export async function GET() {
   try {
     // Parallel fetch: latest sessions, chain data, token stats, hook logs
-    const [sessionsRes, chainsRes, tokenStatsRes, hookLogsRes, routineRes] = await Promise.all([
+    const [sessionsRes, chainsRes, tokenStatsRes, hookLogsRes, routineRes, latestHandoffRes] = await Promise.all([
       // 1. Recent sessions (latest 5)
       supabase
         .from("angelo_session_logs")
-        .select("id, project_key, session_date, title, surface, summary, chain_id, entry_point, input_tokens, output_tokens, cost_usd, tags, mission, handoff_context")
+        .select("id, session_code, project_key, session_date, title, surface, summary, chain_id, entry_point, input_tokens, output_tokens, cost_usd, tags, mission, handoff_context, structured_summary, project_keys_seen")
         .order("created_at", { ascending: false })
         .limit(5),
 
@@ -42,6 +42,14 @@ export async function GET() {
         .or("mission.ilike.%routine%,task_type.eq.LOG")
         .order("priority", { ascending: true })
         .limit(5),
+
+      // 6. Latest open handoff for hero area
+      supabase
+        .from("angelo_handoffs")
+        .select("id, handoff_code, created_by_session_id, project_key, scope_type, scope_name, entry_point, version, sections_total, sections_completed, sections_remaining, source, status, picked_up_by_session_id, notes, vault_path, created_at, updated_at")
+        .in("status", ["open", "picked_up"])
+        .order("created_at", { ascending: false })
+        .limit(1),
     ]);
 
     const sessions = sessionsRes.data || [];
@@ -49,6 +57,7 @@ export async function GET() {
     const tokenDays = tokenStatsRes.data || [];
     const hookLogs = hookLogsRes.data || [];
     const routineTasks = routineRes.data || [];
+    const latestHandoff = latestHandoffRes.data?.[0] || null;
 
     // Hero: latest session
     const hero = sessions[0] || null;
@@ -123,6 +132,7 @@ export async function GET() {
 
     return NextResponse.json({
       hero,
+      latest_handoff: latestHandoff,
       recent_sessions: sessions.slice(1, 5),
       chains,
       token_stats: {

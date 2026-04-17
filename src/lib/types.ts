@@ -52,6 +52,7 @@ export interface Task {
 
 export interface SessionLog {
   id: string;
+  session_code: string | null;
   project_key: string | null;
   session_date: string;
   surface: string;
@@ -63,6 +64,8 @@ export interface SessionLog {
   input_tokens: number | null;
   output_tokens: number | null;
   cost_usd: number | null;
+  structured_summary: Record<string, unknown> | null;
+  project_keys_seen: string[] | null;
   created_at: string;
 }
 
@@ -123,6 +126,7 @@ export interface SkillInventory {
 
 export interface Handoff {
   id: string;
+  handoff_code: string | null;
   created_by_session_id: string | null;
   project_key: string;
   scope_type: 'app' | 'module' | 'feature' | 'mission';

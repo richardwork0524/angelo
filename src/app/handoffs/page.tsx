@@ -2,9 +2,9 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { StickyHeader } from '@/components/sticky-header';
+import { HandoffCard } from '@/components/handoff-card';
 import { cachedFetch } from '@/lib/cache';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
-import { patchHandoff } from '@/lib/mutate';
 import { useToast } from '@/components/toast';
 import type { Handoff } from '@/lib/types';
 
@@ -16,35 +16,12 @@ const STATUS_TABS: { key: string | null; label: string; color?: string }[] = [
   { key: 'completed', label: 'Completed', color: 'var(--green)' },
 ];
 
-const SCOPE_COLORS: Record<string, string> = {
-  app: 'var(--purple)',
-  module: 'var(--accent)',
-  feature: 'var(--cyan)',
-  mission: 'var(--green)',
-};
-
-const STATUS_COLORS: Record<string, { text: string; bg: string }> = {
-  open: { text: 'var(--orange)', bg: 'var(--orange-dim)' },
-  picked_up: { text: 'var(--accent)', bg: 'var(--accent-dim)' },
-  completed: { text: 'var(--green)', bg: 'var(--green-dim)' },
-};
-
-function timeAgo(date: string): string {
-  const mins = Math.floor((Date.now() - new Date(date).getTime()) / 60000);
-  if (mins < 1) return 'now';
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
-}
 
 export default function HandoffsPage() {
   const [handoffs, setHandoffs] = useState<Handoff[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const { showToast, ToastContainer } = useToast();
 
@@ -75,26 +52,8 @@ export default function HandoffsPage() {
     onRefresh: fetchHandoffs,
   });
 
-  function handleStatusChange(id: string, newStatus: string) {
-    // Optimistic update
-    setHandoffs((prev) =>
-      prev.map((h) => (h.id === id ? { ...h, status: newStatus as Handoff['status'] } : h))
-    );
-    patchHandoff(id, newStatus, {
-      onSuccess: () => {
-        showToast(`Marked ${newStatus.replace('_', ' ')}`);
-        fetchHandoffs(true);
-      },
-      onError: () => {
-        showToast('Update failed', 'error');
-        fetchHandoffs(true);
-      },
-    });
-  }
-
   async function handleDelete(id: string) {
     setConfirmDeleteId(null);
-    setExpandedId(null);
 
     try {
       const res = await fetch('/api/handoffs', {
@@ -166,181 +125,39 @@ export default function HandoffsPage() {
           </div>
         ) : (
           <div className="space-y-2">
-            {handoffs.map((h) => {
-              const isExpanded = expandedId === h.id;
-              const pct = h.sections_total > 0 ? Math.round((h.sections_completed / h.sections_total) * 100) : 0;
-              const statusColor = STATUS_COLORS[h.status] || STATUS_COLORS.open;
-              const scopeColor = SCOPE_COLORS[h.scope_type] || 'var(--text3)';
-
-              return (
-                <div
-                  key={h.id}
-                  className="rounded-[16px] bg-[var(--card)] border border-[var(--border)] hover:border-[var(--border2)] transition-all overflow-hidden"
-                >
-                  {/* Card header — clickable */}
-                  <button
-                    onClick={() => setExpandedId(isExpanded ? null : h.id)}
-                    className="w-full text-left px-4 pt-3 pb-2.5"
-                  >
-                    {/* Row 1: scope badge + scope name + status */}
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <span
-                        className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-[4px]"
-                        style={{ color: scopeColor, backgroundColor: `color-mix(in srgb, ${scopeColor} 15%, transparent)` }}
+            {handoffs.map((h) => (
+              <div key={h.id} className="relative group">
+                <HandoffCard handoff={h} onUpdate={() => fetchHandoffs(true)} />
+                {/* Delete button — shows on hover */}
+                <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {confirmDeleteId === h.id ? (
+                    <div className="flex items-center gap-1.5 bg-[var(--surface)] rounded-[8px] px-2 py-1.5 border border-[var(--border)]" style={{ boxShadow: '0 2px 8px rgba(0,0,0,.2)' }}>
+                      <span className="text-[11px] text-[var(--red)]">Delete?</span>
+                      <button
+                        onClick={() => handleDelete(h.id)}
+                        className="text-[10px] font-semibold text-white px-2 py-0.5 rounded-[4px] bg-[var(--red)] hover:opacity-80"
                       >
-                        {h.scope_type}
-                      </span>
-                      <span className="flex-1 text-[14px] font-semibold text-[var(--text)] truncate">
-                        {h.scope_name}
-                      </span>
-                      <span
-                        className="text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0"
-                        style={{ color: statusColor.text, backgroundColor: statusColor.bg }}
+                        Yes
+                      </button>
+                      <button
+                        onClick={() => setConfirmDeleteId(null)}
+                        className="text-[10px] font-semibold text-[var(--text3)] px-2 py-0.5 rounded-[4px] bg-[var(--card)] hover:opacity-80"
                       >
-                        {h.status.replace('_', ' ')}
-                      </span>
+                        No
+                      </button>
                     </div>
-
-                    {/* Row 2: progress bar */}
-                    {h.sections_total > 0 && (
-                      <div className="flex items-center gap-2 mb-1.5">
-                        <div className="flex-1 h-[4px] rounded-full bg-[var(--card2)] overflow-hidden">
-                          <div
-                            className="h-full rounded-full transition-all"
-                            style={{
-                              width: `${pct}%`,
-                              backgroundColor: pct === 100 ? 'var(--green)' : 'var(--accent)',
-                            }}
-                          />
-                        </div>
-                        <span className="text-[11px] text-[var(--text3)] tabular-nums shrink-0">
-                          {h.sections_completed}/{h.sections_total}
-                        </span>
-                      </div>
-                    )}
-
-                    {/* Row 3: meta line */}
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-[11px] text-[var(--text3)]">{h.project_key}</span>
-                      {h.entry_point && (
-                        <>
-                          <span className="text-[11px] text-[var(--text3)] opacity-40">·</span>
-                          <span className="text-[11px] text-[var(--accent)] font-medium">{h.entry_point}</span>
-                        </>
-                      )}
-                      {h.version && (
-                        <>
-                          <span className="text-[11px] text-[var(--text3)] opacity-40">·</span>
-                          <span className="text-[11px] text-[var(--text3)]">{h.version}</span>
-                        </>
-                      )}
-                      <span className="text-[11px] text-[var(--text3)] opacity-40">·</span>
-                      <span
-                        className="text-[10px] font-medium px-1.5 py-0.5 rounded-[4px]"
-                        style={{
-                          color: h.source === 'auto' ? 'var(--orange)' : 'var(--accent)',
-                          backgroundColor: h.source === 'auto' ? 'var(--orange-dim)' : 'var(--accent-dim)',
-                        }}
-                      >
-                        {h.source}
-                      </span>
-                      <span className="text-[11px] text-[var(--text3)] opacity-40">·</span>
-                      <span className="text-[11px] text-[var(--text3)] opacity-60">{timeAgo(h.created_at)}</span>
-                    </div>
-                  </button>
-
-                  {/* Expanded section */}
-                  {isExpanded && (
-                    <div className="px-4 pb-3 border-t border-[var(--border)] mt-0.5 pt-2.5">
-                      {/* Sections remaining */}
-                      {h.sections_remaining.length > 0 && (
-                        <div className="mb-2.5">
-                          <p className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-[0.06em] mb-1.5">
-                            Remaining ({h.sections_remaining.length})
-                          </p>
-                          <div className="space-y-1">
-                            {h.sections_remaining.map((s, i) => (
-                              <div key={i} className="flex items-start gap-2 px-2 py-1.5 rounded-[8px] bg-[var(--card2)]">
-                                <span className="w-[6px] h-[6px] rounded-full mt-[5px] shrink-0 bg-[var(--orange)]" />
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-[12px] text-[var(--text)]">{s.name}</p>
-                                  {s.notes && (
-                                    <p className="text-[11px] text-[var(--text3)] mt-0.5">{s.notes}</p>
-                                  )}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Notes */}
-                      {h.notes && (
-                        <p className="text-[12px] text-[var(--text2)] bg-[var(--card2)] rounded-[8px] px-3 py-2 mb-2.5 whitespace-pre-line">
-                          {h.notes}
-                        </p>
-                      )}
-
-                      {/* Action buttons */}
-                      <div className="flex items-center gap-2">
-                        {h.status === 'open' && (
-                          <button
-                            onClick={() => handleStatusChange(h.id, 'picked_up')}
-                            className="text-[12px] font-semibold text-[var(--accent)] px-3 py-1.5 rounded-[8px] bg-[var(--accent-dim)] hover:opacity-80 transition-opacity"
-                          >
-                            Pick Up
-                          </button>
-                        )}
-                        {h.status === 'picked_up' && (
-                          <button
-                            onClick={() => handleStatusChange(h.id, 'completed')}
-                            className="text-[12px] font-semibold text-[var(--green)] px-3 py-1.5 rounded-[8px] bg-[var(--green-dim)] hover:opacity-80 transition-opacity"
-                          >
-                            Mark Completed
-                          </button>
-                        )}
-                        {h.status === 'completed' && (
-                          <button
-                            onClick={() => handleStatusChange(h.id, 'open')}
-                            className="text-[12px] font-semibold text-[var(--text3)] px-3 py-1.5 rounded-[8px] bg-[var(--card2)] hover:opacity-80 transition-opacity"
-                          >
-                            Reopen
-                          </button>
-                        )}
-
-                        {/* Delete button */}
-                        <div style={{ marginLeft: 'auto' }}>
-                          {confirmDeleteId === h.id ? (
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-[11px] text-[var(--red)]">Archive vault file?</span>
-                              <button
-                                onClick={() => handleDelete(h.id)}
-                                className="text-[11px] font-semibold text-white px-2 py-1 rounded-[6px] bg-[var(--red)] hover:opacity-80 transition-opacity"
-                              >
-                                Yes, delete
-                              </button>
-                              <button
-                                onClick={() => setConfirmDeleteId(null)}
-                                className="text-[11px] font-semibold text-[var(--text3)] px-2 py-1 rounded-[6px] bg-[var(--card2)] hover:opacity-80 transition-opacity"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => setConfirmDeleteId(h.id)}
-                              className="text-[11px] font-medium text-[var(--red)] px-2 py-1 rounded-[6px] bg-[var(--red-dim)] hover:opacity-80 transition-all"
-                            >
-                              Delete
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
+                  ) : (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(h.id); }}
+                      className="w-6 h-6 rounded-[6px] flex items-center justify-center text-[var(--text3)] hover:text-[var(--red)] hover:bg-[var(--red-dim)] transition-all"
+                      title="Delete"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg>
+                    </button>
                   )}
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
         )}
       </div>

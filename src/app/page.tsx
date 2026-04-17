@@ -7,9 +7,11 @@ import { ColorLegend } from '@/components/color-legend';
 import { SessionPopup } from '@/components/popups/session-popup';
 import { ChainPopup } from '@/components/popups/chain-popup';
 import { SystemPopup } from '@/components/popups/system-popup';
+import { HandoffCard } from '@/components/handoff-card';
 import { SURFACE_COLORS } from '@/lib/constants';
 import { cachedFetch } from '@/lib/cache';
 import { useBreakpoint } from '@/hooks/useBreakpoint';
+import type { Handoff } from '@/lib/types';
 
 /* ── Types ── */
 
@@ -68,6 +70,7 @@ interface HookLog {
 
 interface HomeData {
   hero: Session | null;
+  latest_handoff: Handoff | null;
   recent_sessions: Session[];
   chains: Chain[];
   token_stats: TokenStats;
@@ -236,6 +239,17 @@ export default function HomePage() {
                 )}
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Latest Handoff */}
+        {data.latest_handoff && (
+          <div className="shrink-0">
+            <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.05em] text-[var(--orange)] mb-1.5 px-1">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              Active Handoff
+            </div>
+            <HandoffCard handoff={data.latest_handoff} onUpdate={fetchHome} />
           </div>
         )}
 
