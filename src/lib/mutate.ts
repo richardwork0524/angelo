@@ -80,6 +80,23 @@ export function patchHandoff(
   });
 }
 
+/** Convenience: DELETE a handoff (DB delete + queue vault archive) */
+export function deleteHandoff(
+  handoffId: string,
+  opts: { onSuccess?: () => void; onError?: () => void } = {}
+) {
+  bgMutate({
+    request: () =>
+      fetch('/api/handoffs', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: handoffId }),
+      }),
+    cacheKeys: ['/api/handoffs'],
+    ...opts,
+  });
+}
+
 /** Convenience: POST a new subtask */
 export function addSubtask(
   projectKey: string,

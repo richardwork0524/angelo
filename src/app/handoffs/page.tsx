@@ -4,9 +4,10 @@ import { useEffect, useState, useCallback } from 'react';
 import { StickyHeader } from '@/components/sticky-header';
 import { cachedFetch } from '@/lib/cache';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
-import { patchHandoff } from '@/lib/mutate';
+import { patchHandoff, deleteHandoff } from '@/lib/mutate';
 import { useToast } from '@/components/toast';
 import type { Handoff } from '@/lib/types';
+
 
 const STATUS_TABS: { key: string | null; label: string; color?: string }[] = [
   { key: null, label: 'All' },
@@ -44,6 +45,7 @@ export default function HandoffsPage() {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const { showToast, ToastContainer } = useToast();
 
   const fetchHandoffs = useCallback(async () => {
@@ -80,6 +82,20 @@ export default function HandoffsPage() {
       onSuccess: () => showToast(`Marked ${newStatus.replace('_', ' ')}`),
       onError: () => {
         showToast('Update failed', 'error');
+        fetchHandoffs();
+      },
+    });
+  }
+
+  function handleDelete(id: string) {
+    setHandoffs((prev) => prev.filter((h) => h.id !== id));
+    setTotal((prev) => prev - 1);
+    setConfirmDeleteId(null);
+    setExpandedId(null);
+    deleteHandoff(id, {
+      onSuccess: () => showToast('Deleted — vault file will be archived on next session'),
+      onError: () => {
+        showToast('Delete failed', 'error');
         fetchHandoffs();
       },
     });
@@ -275,6 +291,34 @@ export default function HandoffsPage() {
                             Reopen
                           </button>
                         )}
+
+                        {/* Delete with inline confirmation */}
+                        <div className="ml-auto">
+                          {confirmDeleteId === h.id ? (
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[11px] text-[var(--red)]">Archive vault file?</span>
+                              <button
+                                onClick={() => handleDelete(h.id)}
+                                className="text-[11px] font-semibold text-white px-2 py-1 rounded-[6px] bg-[var(--red)] hover:opacity-80 transition-opacity"
+                              >
+                                Yes, delete
+                              </button>
+                              <button
+                                onClick={() => setConfirmDeleteId(null)}
+                                className="text-[11px] font-semibold text-[var(--text3)] px-2 py-1 rounded-[6px] bg-[var(--card2)] hover:opacity-80 transition-opacity"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setConfirmDeleteId(h.id)}
+                              className="text-[11px] text-[var(--text3)] hover:text-[var(--red)] px-2 py-1 rounded-[6px] hover:bg-[var(--red-dim)] transition-all"
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   )}

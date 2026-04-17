@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
     let query = supabase
       .from("angelo_handoffs")
       .select(
-        "id, created_by_session_id, project_key, scope_type, scope_name, entry_point, version, sections_total, sections_completed, sections_remaining, source, status, picked_up_by_session_id, notes, created_at, updated_at",
+        "id, created_by_session_id, project_key, scope_type, scope_name, entry_point, version, sections_total, sections_completed, sections_remaining, source, status, picked_up_by_session_id, notes, vault_path, created_at, updated_at",
         { count: "exact" }
       )
       .order("created_at", { ascending: false })
@@ -76,5 +76,53 @@ export async function PATCH(request: NextRequest) {
   } catch (err) {
     console.error("Handoffs PATCH error:", err);
     return NextResponse.json({ error: "Failed to update handoff" }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { id } = body;
+
+    if (!id) {
+      return NextResponse.json({ error: "id required" }, { status: 400 });
+    }
+
+    // Read handoff to get vault_path before deleting
+    const { data: handoff } = await supabase
+      .from("angelo_handoffs")
+      .select("id, vault_path, project_key, scope_name")
+      .eq("id", id)
+      .single();
+
+    if (!handoff) {
+      return NextResponse.json({ error: "Handoff not found" }, { status: 404 });
+    }
+
+    // Queue vault file archive if vault_path exists
+    if (handoff.vault_path) {
+      await supabase.from("pending_sync_actions").insert({
+        action_type: "archive_handoff",
+        project_key: handoff.project_key,
+        payload: {
+          vault_path: handoff.vault_path,
+          scope_name: handoff.scope_name,
+          handoff_id: handoff.id,
+        },
+      });
+    }
+
+    // Delete from DB
+    const { error } = await supabase
+      .from("angelo_handoffs")
+      .delete()
+      .eq("id", id);
+
+    if (error) throw error;
+
+    return NextResponse.json({ ok: true, archived: !!handoff.vault_path });
+  } catch (err) {
+    console.error("Handoffs DELETE error:", err);
+    return NextResponse.json({ error: "Failed to delete handoff" }, { status: 500 });
   }
 }

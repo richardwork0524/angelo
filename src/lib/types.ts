@@ -136,6 +136,7 @@ export interface Handoff {
   status: 'open' | 'picked_up' | 'completed';
   picked_up_by_session_id: string | null;
   notes: string | null;
+  vault_path: string | null;
   created_at: string;
   updated_at: string;
 }
