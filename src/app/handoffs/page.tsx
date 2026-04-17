@@ -8,12 +8,12 @@ import { patchHandoff } from '@/lib/mutate';
 import { useToast } from '@/components/toast';
 import type { Handoff } from '@/lib/types';
 
-const STATUS_TABS = [
+const STATUS_TABS: { key: string | null; label: string; color?: string }[] = [
   { key: null, label: 'All' },
   { key: 'open', label: 'Open', color: 'var(--orange)' },
   { key: 'picked_up', label: 'Picked Up', color: 'var(--accent)' },
   { key: 'completed', label: 'Completed', color: 'var(--green)' },
-] as const;
+];
 
 const SCOPE_COLORS: Record<string, string> = {
   app: 'var(--purple)',
