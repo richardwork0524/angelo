@@ -48,12 +48,14 @@ export default function HandoffsPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const { showToast, ToastContainer } = useToast();
 
-  const fetchHandoffs = useCallback(async () => {
+  const fetchHandoffs = useCallback(async (skipCache = false) => {
     try {
       const params = new URLSearchParams();
       if (statusFilter) params.set('status', statusFilter);
       const url = `/api/handoffs${params.toString() ? '?' + params.toString() : ''}`;
-      const data = await cachedFetch<{ handoffs: Handoff[]; total: number }>(url, 15000);
+      const data: { handoffs: Handoff[]; total: number } = skipCache
+        ? await fetch(url).then((r) => r.json())
+        : await cachedFetch(url, 15000);
       setHandoffs(data.handoffs);
       setTotal(data.total);
     } catch {
@@ -79,10 +81,13 @@ export default function HandoffsPage() {
       prev.map((h) => (h.id === id ? { ...h, status: newStatus as Handoff['status'] } : h))
     );
     patchHandoff(id, newStatus, {
-      onSuccess: () => showToast(`Marked ${newStatus.replace('_', ' ')}`),
+      onSuccess: () => {
+        showToast(`Marked ${newStatus.replace('_', ' ')}`);
+        fetchHandoffs(true);
+      },
       onError: () => {
         showToast('Update failed', 'error');
-        fetchHandoffs();
+        fetchHandoffs(true);
       },
     });
   }
@@ -93,10 +98,13 @@ export default function HandoffsPage() {
     setConfirmDeleteId(null);
     setExpandedId(null);
     deleteHandoff(id, {
-      onSuccess: () => showToast('Deleted — vault file will be archived on next session'),
+      onSuccess: () => {
+        showToast('Handoff deleted');
+        fetchHandoffs(true);
+      },
       onError: () => {
         showToast('Delete failed', 'error');
-        fetchHandoffs();
+        fetchHandoffs(true);
       },
     });
   }
