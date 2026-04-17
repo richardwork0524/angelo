@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { StickyHeader } from '@/components/sticky-header';
 import { cachedFetch } from '@/lib/cache';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
-import { patchHandoff, deleteHandoff } from '@/lib/mutate';
+import { patchHandoff } from '@/lib/mutate';
 import { useToast } from '@/components/toast';
 import type { Handoff } from '@/lib/types';
 
@@ -92,21 +92,29 @@ export default function HandoffsPage() {
     });
   }
 
-  function handleDelete(id: string) {
-    setHandoffs((prev) => prev.filter((h) => h.id !== id));
-    setTotal((prev) => prev - 1);
+  async function handleDelete(id: string) {
     setConfirmDeleteId(null);
     setExpandedId(null);
-    deleteHandoff(id, {
-      onSuccess: () => {
-        showToast('Handoff deleted');
-        fetchHandoffs(true);
-      },
-      onError: () => {
-        showToast('Delete failed', 'error');
-        fetchHandoffs(true);
-      },
-    });
+
+    try {
+      const res = await fetch('/api/handoffs', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+      if (!res.ok) throw new Error('Failed');
+      showToast('Handoff deleted');
+      // Fetch fresh list from server (skip cache entirely)
+      const params = new URLSearchParams();
+      if (statusFilter) params.set('status', statusFilter);
+      const freshUrl = `/api/handoffs${params.toString() ? '?' + params.toString() : ''}`;
+      const data = await fetch(freshUrl).then((r) => r.json());
+      setHandoffs(data.handoffs);
+      setTotal(data.total);
+    } catch {
+      showToast('Delete failed', 'error');
+      fetchHandoffs(true);
+    }
   }
 
   const statusCounts = handoffs.reduce(
@@ -300,8 +308,8 @@ export default function HandoffsPage() {
                           </button>
                         )}
 
-                        {/* Delete with inline confirmation */}
-                        <div className="ml-auto">
+                        {/* Delete button */}
+                        <div style={{ marginLeft: 'auto' }}>
                           {confirmDeleteId === h.id ? (
                             <div className="flex items-center gap-1.5">
                               <span className="text-[11px] text-[var(--red)]">Archive vault file?</span>
@@ -321,7 +329,7 @@ export default function HandoffsPage() {
                           ) : (
                             <button
                               onClick={() => setConfirmDeleteId(h.id)}
-                              className="text-[11px] text-[var(--text3)] hover:text-[var(--red)] px-2 py-1 rounded-[6px] hover:bg-[var(--red-dim)] transition-all"
+                              className="text-[11px] font-medium text-[var(--red)] px-2 py-1 rounded-[6px] bg-[var(--red-dim)] hover:opacity-80 transition-all"
                             >
                               Delete
                             </button>

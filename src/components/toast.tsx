@@ -21,12 +21,13 @@ export function Toast({ message, type = "success", onDismiss, persistent, durati
     }
   }, [onDismiss, persistent, duration]);
 
-  const bgColor = type === "error" ? "bg-[var(--red)]" : type === "info" ? "bg-[var(--card)]" : "bg-[var(--card)]";
+  const bgColor = type === "error" ? "bg-[var(--red)]" : "bg-[var(--surface)]";
   const borderColor = type === "error" ? "border-[var(--red)]" : type === "info" ? "border-[var(--border2)]" : "border-[var(--green)]";
+  const textColor = type === "error" ? "text-white" : "text-[var(--text)]";
 
   return (
     <div
-      className={`fixed top-4 right-4 z-[100] ${bgColor} border ${borderColor} text-white px-4 py-2.5 rounded-[12px] shadow-lg flex items-center gap-2.5 max-w-sm transition-all duration-300 ${
+      className={`fixed top-4 right-4 z-[100] ${bgColor} border ${borderColor} ${textColor} px-4 py-2.5 rounded-[12px] shadow-lg flex items-center gap-2.5 max-w-sm transition-all duration-300 ${
         visible ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-2"
       }`}
     >
