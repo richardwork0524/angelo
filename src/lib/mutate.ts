@@ -62,18 +62,24 @@ export function deleteTask(
   });
 }
 
-/** Convenience: PATCH a handoff status */
+/**
+ * Convenience: PATCH a handoff. Overload for legacy `patchHandoff(id, status)`
+ * call sites; preferred form is `patchHandoff(id, { status, purpose, is_mounted })`.
+ */
 export function patchHandoff(
   handoffId: string,
-  status: string,
+  patch: string | { status?: string; purpose?: string; is_mounted?: boolean },
   opts: { onSuccess?: () => void; onError?: () => void } = {}
 ) {
+  const body = typeof patch === 'string'
+    ? { id: handoffId, status: patch }
+    : { id: handoffId, ...patch };
   bgMutate({
     request: () =>
       fetch('/api/handoffs', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: handoffId, status }),
+        body: JSON.stringify(body),
       }),
     cacheKeys: ['/api/handoffs', '/api/home'],
     ...opts,

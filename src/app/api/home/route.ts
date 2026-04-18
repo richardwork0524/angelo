@@ -63,7 +63,7 @@ export async function GET() {
       // Handoffs — last 20 by updated_at; filtered client-side for hero / recent / mount
       supabase
         .from("angelo_handoffs")
-        .select("id, handoff_code, created_by_session_id, project_key, scope_type, scope_name, entry_point, version, sections_total, sections_completed, sections_remaining, source, status, picked_up_by_session_id, notes, vault_path, created_at, updated_at")
+        .select("id, handoff_code, created_by_session_id, project_key, scope_type, scope_name, entry_point, version, sections_total, sections_completed, sections_remaining, source, status, picked_up_by_session_id, notes, vault_path, purpose, is_mounted, created_at, updated_at")
         .order("updated_at", { ascending: false })
         .limit(20),
 
@@ -106,7 +106,8 @@ export async function GET() {
     const handoffs = handoffsRes.data || [];
 
     const openHandoffs = handoffs.filter((h) => h.status === "open" || h.status === "picked_up");
-    const mountedHandoffs = handoffs.filter((h) => h.status === "picked_up");
+    // mounted is now a canonical column; is_mounted === true is the source of truth.
+    const mountedHandoffs = handoffs.filter((h) => h.is_mounted === true);
     // Recent = open/picked_up OR updated in last 7 days
     const recentHandoffs = handoffs.filter(
       (h) => h.status === "open" || h.status === "picked_up" || (h.updated_at && h.updated_at >= sevenDaysAgoStr)

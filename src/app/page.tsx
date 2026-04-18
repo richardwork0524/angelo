@@ -90,7 +90,7 @@ export default function HomePage() {
 
   function handleUnmount() {
     if (!mounted) return;
-    patchHandoff(mounted.id, 'open', { onSuccess: () => fetchHome() });
+    patchHandoff(mounted.id, { is_mounted: false }, { onSuccess: () => fetchHome() });
   }
 
   function handleNewNote() {

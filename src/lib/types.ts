@@ -124,6 +124,9 @@ export interface SkillInventory {
   updated_at: string;
 }
 
+export type HandoffStatus = 'open' | 'picked_up' | 'completed' | 'blocked';
+export type HandoffPurpose = 'create' | 'debug' | 'update';
+
 export interface Handoff {
   id: string;
   handoff_code: string | null;
@@ -137,10 +140,12 @@ export interface Handoff {
   sections_completed: number;
   sections_remaining: { name: string; status: string; notes: string | null }[];
   source: 'manual' | 'auto';
-  status: 'open' | 'picked_up' | 'completed';
+  status: HandoffStatus;
   picked_up_by_session_id: string | null;
   notes: string | null;
   vault_path: string | null;
+  purpose: HandoffPurpose;
+  is_mounted: boolean;
   created_at: string;
   updated_at: string;
 }

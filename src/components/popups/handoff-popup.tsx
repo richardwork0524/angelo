@@ -46,6 +46,15 @@ export function HandoffPopup({ handoff, open, onClose, onUpdate }: {
     });
   }
 
+  function handleToggleMount() {
+    if (acting) return;
+    setActing(true);
+    patchHandoff(handoff!.id, { is_mounted: !handoff!.is_mounted }, {
+      onSuccess: () => { setActing(false); onUpdate?.(); onClose(); },
+      onError: () => { setActing(false); },
+    });
+  }
+
   function handleCopy() {
     const remaining = (handoff!.sections_remaining || [])
       .map((s, i) => `${i + 1}. [${s.status === 'done' ? 'x' : ' '}] ${s.name}`)
@@ -143,6 +152,11 @@ export function HandoffPopup({ handoff, open, onClose, onUpdate }: {
 
       <PopupFooter>
         <PopupBtn variant="copy" onClick={handleCopy}>{copyLabel}</PopupBtn>
+        {handoff.status !== 'completed' && (
+          <PopupBtn variant={handoff.is_mounted ? 'ghost' : 'primary'} onClick={handleToggleMount}>
+            {acting ? '…' : handoff.is_mounted ? 'Unmount' : 'Mount'}
+          </PopupBtn>
+        )}
         {handoff.status === 'open' && (
           <PopupBtn variant="primary" onClick={() => handleAction('picked_up')}>
             {acting ? 'Picking up...' : 'Pick Up'}

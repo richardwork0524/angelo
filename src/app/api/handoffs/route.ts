@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
     let query = supabase
       .from("angelo_handoffs")
       .select(
-        "id, handoff_code, created_by_session_id, project_key, scope_type, scope_name, entry_point, version, sections_total, sections_completed, sections_remaining, source, status, picked_up_by_session_id, notes, vault_path, created_at, updated_at",
+        "id, handoff_code, created_by_session_id, project_key, scope_type, scope_name, entry_point, version, sections_total, sections_completed, sections_remaining, source, status, picked_up_by_session_id, notes, vault_path, purpose, is_mounted, created_at, updated_at",
         { count: "exact" }
       )
       .order("created_at", { ascending: false })
@@ -59,15 +59,49 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
-    const { id, status } = body;
+    const { id, status, purpose, is_mounted } = body as {
+      id?: string;
+      status?: string;
+      purpose?: string;
+      is_mounted?: boolean;
+    };
 
-    if (!id || !status) {
-      return NextResponse.json({ error: "id and status required" }, { status: 400 });
+    if (!id) {
+      return NextResponse.json({ error: "id required" }, { status: 400 });
+    }
+
+    const patch: Record<string, unknown> = {};
+    if (typeof status === "string") {
+      if (!["open", "picked_up", "completed", "blocked"].includes(status)) {
+        return NextResponse.json({ error: "invalid status" }, { status: 400 });
+      }
+      patch.status = status;
+    }
+    if (typeof purpose === "string") {
+      if (!["create", "debug", "update"].includes(purpose)) {
+        return NextResponse.json({ error: "invalid purpose" }, { status: 400 });
+      }
+      patch.purpose = purpose;
+    }
+    if (typeof is_mounted === "boolean") {
+      // Singleton: if mounting, unmount everything else first
+      if (is_mounted) {
+        await supabase
+          .from("angelo_handoffs")
+          .update({ is_mounted: false })
+          .neq("id", id)
+          .eq("is_mounted", true);
+      }
+      patch.is_mounted = is_mounted;
+    }
+
+    if (Object.keys(patch).length === 0) {
+      return NextResponse.json({ error: "no updatable fields" }, { status: 400 });
     }
 
     const { error } = await supabase
       .from("angelo_handoffs")
-      .update({ status })
+      .update(patch)
       .eq("id", id);
 
     if (error) throw error;
