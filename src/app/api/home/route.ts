@@ -21,6 +21,7 @@ export async function GET() {
       sessionsMonthCountRes,
       entitiesCountRes,
       hookErrorsCountRes,
+      tasksOpenCountRes,
     ] = await Promise.all([
       // Recent sessions (latest 5)
       supabase
@@ -97,6 +98,12 @@ export async function GET() {
         .select("id", { count: "exact", head: true })
         .eq("status", "error")
         .gte("created_at", dayAgoIso),
+
+      // Sidebar count: open tasks across all projects
+      supabase
+        .from("angelo_tasks")
+        .select("id", { count: "exact", head: true })
+        .eq("completed", false),
     ]);
 
     const sessions = sessionsRes.data || [];
@@ -216,6 +223,7 @@ export async function GET() {
       sessions_total: sessionsMonthCountRes.count ?? 0,
       entities_total: entitiesCountRes.count ?? 0,
       system_issues: hookErrorsCountRes.count ?? 0,
+      tasks_open: tasksOpenCountRes.count ?? 0,
 
       // Kept for back-compat with older code paths
       hero,

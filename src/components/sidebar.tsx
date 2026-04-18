@@ -10,7 +10,7 @@ interface NavItem {
   label: string;
   href: string;
   icon: string;
-  countKey?: 'handoffs' | 'notes' | 'entities' | 'vault' | 'sessions' | 'system';
+  countKey?: 'handoffs' | 'notes' | 'entities' | 'vault' | 'sessions' | 'system' | 'tasks';
 }
 
 const SECTIONS: { title: string; items: NavItem[] }[] = [
@@ -24,6 +24,7 @@ const SECTIONS: { title: string; items: NavItem[] }[] = [
   {
     title: 'Work',
     items: [
+      { key: 'tasks',    label: 'Tasks',    href: '/tasks',    icon: '✓', countKey: 'tasks' },
       { key: 'entities', label: 'Entities', href: '/entities', icon: '◈', countKey: 'entities' },
       { key: 'notes',    label: 'Notes',    href: '/notes',    icon: '✎', countKey: 'notes' },
     ],
@@ -45,6 +46,7 @@ interface SidebarCounts {
   vault?: number;
   sessions?: number;
   system?: number;
+  tasks?: number;
 }
 
 export function Sidebar() {
@@ -63,6 +65,7 @@ export function Sidebar() {
           entities_total?: number;
           system_issues?: number;
           vault_files?: number;
+          tasks_open?: number;
         }>('/api/home', 30000);
         if (cancelled) return;
         setCounts({
@@ -72,6 +75,7 @@ export function Sidebar() {
           entities: data.entities_total,
           system: data.system_issues,
           vault: data.vault_files,
+          tasks: data.tasks_open,
         });
       } catch {
         // Silent

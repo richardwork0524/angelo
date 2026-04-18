@@ -1,0 +1,636 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import dynamic from 'next/dynamic';
+import { cachedFetch, invalidateCache } from '@/lib/cache';
+import { bgMutate } from '@/lib/mutate';
+import { useBreakpoint } from '@/hooks/useBreakpoint';
+import { TaskList } from '@/components/task/task-list';
+import type { TaskItem } from '@/components/task/task-row';
+import type { DetailTask } from '@/components/task/task-detail';
+
+const TaskDetail = dynamic(
+  () => import('@/components/task/task-detail').then((m) => ({ default: m.TaskDetail })),
+  { ssr: false }
+);
+
+interface ProjectOption {
+  child_key: string;
+  display_name: string;
+  entity_type: string | null;
+}
+
+interface TasksApiTask {
+  id: string;
+  project_key: string;
+  text: string;
+  description: string | null;
+  bucket: string;
+  priority: string | null;
+  surface: string | null;
+  is_owner_action: boolean | null;
+  mission: string | null;
+  version: string | null;
+  task_code: string | null;
+  progress: string | null;
+  parent_task_id: string | null;
+  completed: boolean;
+  log: { timestamp: string; type: string; message: string }[] | null;
+  sort_order: number | null;
+  updated_at: string;
+  created_at: string;
+}
+
+interface TasksApiResponse {
+  tasks: TasksApiTask[];
+  projects: ProjectOption[];
+  missions: { all: string[]; by_project: Record<string, string[]> };
+  stats: {
+    total: number;
+    open: number;
+    completed: number;
+    p0: number;
+    p1: number;
+    p2: number;
+    this_week: number;
+    this_month: number;
+    parked: number;
+  };
+}
+
+const BUCKET_OPTS = [
+  { value: '', label: 'All weeks' },
+  { value: 'THIS_WEEK', label: 'Week' },
+  { value: 'THIS_MONTH', label: 'Month' },
+  { value: 'PARKED', label: 'Parked' },
+];
+const PRIORITY_OPTS = [
+  { value: '', label: 'All priorities' },
+  { value: 'P0', label: 'P0' },
+  { value: 'P1', label: 'P1' },
+  { value: 'P2', label: 'P2' },
+];
+
+function toTaskItem(t: TasksApiTask): TaskItem {
+  return {
+    id: t.id,
+    text: t.text,
+    project_key: t.project_key,
+    bucket: t.bucket,
+    priority: t.priority,
+    surface: t.surface,
+    is_owner_action: !!t.is_owner_action,
+    mission: t.mission,
+    version: t.version,
+    progress: t.progress,
+    parent_task_id: t.parent_task_id,
+    completed: t.completed,
+    updated_at: t.updated_at,
+    task_code: t.task_code,
+  };
+}
+
+function toDetailTask(t: TasksApiTask): DetailTask {
+  return {
+    id: t.id,
+    text: t.text,
+    description: t.description,
+    project_key: t.project_key,
+    bucket: t.bucket,
+    priority: t.priority,
+    surface: t.surface,
+    is_owner_action: !!t.is_owner_action,
+    mission: t.mission,
+    version: t.version,
+    task_code: t.task_code,
+    progress: t.progress,
+    log: t.log,
+    updated_at: t.updated_at,
+    completed: t.completed,
+  };
+}
+
+export default function TasksPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const isDesktop = useBreakpoint(768);
+
+  // Pre-fill project from URL (context-aware from /entity/[key])
+  const initialProject = searchParams.get('project') || '';
+
+  const [project, setProject] = useState<string>(initialProject);
+  const [bucket, setBucket] = useState<string>('');
+  const [priority, setPriority] = useState<string>('');
+  const [mission, setMission] = useState<string>('');
+  const [showCompleted, setShowCompleted] = useState(false);
+  const [search, setSearch] = useState('');
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
+
+  const [data, setData] = useState<TasksApiResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [quickAddText, setQuickAddText] = useState('');
+  const [quickAddBucket, setQuickAddBucket] = useState('THIS_WEEK');
+  const [quickAddProject, setQuickAddProject] = useState<string>('');
+  const [submitting, setSubmitting] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  // Build API URL from filters
+  const apiUrl = useMemo(() => {
+    const params = new URLSearchParams();
+    if (project) params.set('project', project);
+    if (bucket) params.set('bucket', bucket);
+    if (priority) params.set('priority', priority);
+    if (mission) params.set('mission', mission);
+    params.set('completed', showCompleted ? 'all' : 'false');
+    if (search.trim()) params.set('search', search.trim());
+    return `/api/tasks?${params.toString()}`;
+  }, [project, bucket, priority, mission, showCompleted, search]);
+
+  const fetchTasks = useCallback(async (force = false) => {
+    setLoading(true);
+    try {
+      if (force) invalidateCache('/api/tasks');
+      const d = await cachedFetch<TasksApiResponse>(apiUrl, 5000);
+      setData(d);
+      // Seed quick-add project with current filter or first project
+      setQuickAddProject((prev) => prev || project || d.projects[0]?.child_key || '');
+    } catch {
+      setData(null);
+    }
+    setLoading(false);
+  }, [apiUrl, project]);
+
+  useEffect(() => { fetchTasks(); }, [fetchTasks]);
+
+  // Sync URL with project filter (so deep-linking works and /entity/X → /tasks?project=X persists)
+  useEffect(() => {
+    const current = searchParams.get('project') || '';
+    if (current === project) return;
+    const params = new URLSearchParams(searchParams.toString());
+    if (project) params.set('project', project);
+    else params.delete('project');
+    router.replace(`/tasks${params.toString() ? `?${params.toString()}` : ''}`, { scroll: false });
+  }, [project, router, searchParams]);
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 2000);
+  };
+
+  const tasksAsItems = useMemo<TaskItem[]>(
+    () => (data?.tasks || []).map(toTaskItem),
+    [data]
+  );
+
+  const selectedTask = useMemo<DetailTask | null>(() => {
+    if (!selectedTaskId || !data) return null;
+    const raw = data.tasks.find((t) => t.id === selectedTaskId);
+    return raw ? toDetailTask(raw) : null;
+  }, [selectedTaskId, data]);
+
+  const selectedSubtasks = useMemo<DetailTask[]>(() => {
+    if (!selectedTaskId || !data) return [];
+    return data.tasks.filter((t) => t.parent_task_id === selectedTaskId).map(toDetailTask);
+  }, [selectedTaskId, data]);
+
+  // Mission options for autocomplete (per selected project, or all)
+  const missionOptions = useMemo(() => {
+    if (!data) return [];
+    return project ? (data.missions.by_project[project] || []) : data.missions.all;
+  }, [data, project]);
+
+  // ── Mutations ──
+  const optimisticUpdate = (taskId: string, fields: Partial<TasksApiTask>) => {
+    setData((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        tasks: prev.tasks.map((t) => (t.id === taskId ? { ...t, ...fields } : t)),
+      };
+    });
+  };
+
+  const optimisticRemove = (taskId: string) => {
+    setData((prev) => {
+      if (!prev) return prev;
+      return { ...prev, tasks: prev.tasks.filter((t) => t.id !== taskId) };
+    });
+  };
+
+  const syncOpts = (msg: string) => ({
+    onSuccess: () => {
+      showToast(msg);
+      invalidateCache('/api/tasks');
+      invalidateCache('/api/home');
+      fetchTasks(true);
+    },
+    onError: () => {
+      showToast('Sync failed — retrying');
+      fetchTasks(true);
+    },
+  });
+
+  function handleToggle(taskId: string) {
+    const task = data?.tasks.find((t) => t.id === taskId);
+    if (!task) return;
+    const newCompleted = !task.completed;
+    if (!showCompleted && newCompleted) {
+      optimisticRemove(taskId);
+    } else {
+      optimisticUpdate(taskId, { completed: newCompleted });
+    }
+    bgMutate({
+      request: () =>
+        fetch(`/api/tasks/${taskId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: newCompleted ? 'completed' : 'open' }),
+        }),
+      ...syncOpts(newCompleted ? 'Task completed' : 'Task reopened'),
+    });
+  }
+
+  function handleUpdate(taskId: string, fields: Record<string, unknown>) {
+    optimisticUpdate(taskId, fields as Partial<TasksApiTask>);
+    bgMutate({
+      request: () =>
+        fetch(`/api/tasks/${taskId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(fields),
+        }),
+      ...syncOpts('Saved'),
+    });
+  }
+
+  function handleDelete(taskId: string) {
+    optimisticRemove(taskId);
+    setSelectedTaskId(null);
+    bgMutate({
+      request: () => fetch(`/api/tasks/${taskId}`, { method: 'DELETE' }),
+      ...syncOpts('Task deleted'),
+    });
+  }
+
+  async function handleAddSubtask(parentId: string, text: string) {
+    const parent = data?.tasks.find((t) => t.id === parentId);
+    if (!parent) return;
+    bgMutate({
+      request: () =>
+        fetch('/api/tasks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            project_key: parent.project_key,
+            text,
+            bucket: parent.bucket || 'THIS_WEEK',
+            parent_task_id: parentId,
+          }),
+        }),
+      ...syncOpts('Subtask added'),
+    });
+  }
+
+  async function handleQuickAdd(e: React.FormEvent) {
+    e.preventDefault();
+    if (!quickAddText.trim()) {
+      showToast('Task text required');
+      return;
+    }
+    if (!quickAddProject) {
+      showToast('Pick a project');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const res = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project_key: quickAddProject,
+          text: quickAddText.trim(),
+          bucket: quickAddBucket,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setQuickAddText('');
+      invalidateCache('/api/tasks');
+      invalidateCache('/api/home');
+      showToast('Task added');
+      fetchTasks(true);
+    } catch {
+      showToast('Add failed — try again');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function clearFilters() {
+    setProject('');
+    setBucket('');
+    setPriority('');
+    setMission('');
+    setSearch('');
+    setShowCompleted(false);
+  }
+
+  const activeFilterCount =
+    (project ? 1 : 0) +
+    (bucket ? 1 : 0) +
+    (priority ? 1 : 0) +
+    (mission ? 1 : 0) +
+    (search.trim() ? 1 : 0) +
+    (showCompleted ? 1 : 0);
+
+  return (
+    <div className="h-full overflow-y-auto" data-testid="tasks-page">
+      <div
+        className="mx-auto"
+        style={{
+          maxWidth: 1280,
+          padding: isDesktop ? '28px 32px' : '16px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12,
+        }}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <h1 className="font-semibold tracking-tight" style={{ fontSize: 'var(--t-h2)' }}>
+            Tasks
+            <span className="ml-2 font-normal" style={{ color: 'var(--text3)', fontSize: 'var(--t-body)' }}>
+              {data ? `${data.stats.open} open` : '—'}
+              {data && data.stats.open > 0 && (
+                <>
+                  {' · '}
+                  {data.stats.this_week}w / {data.stats.this_month}m / {data.stats.parked}p
+                </>
+              )}
+            </span>
+          </h1>
+          {!isDesktop && (
+            <button
+              onClick={() => setShowMobileFilters((v) => !v)}
+              style={{
+                padding: '6px 12px',
+                fontSize: 'var(--t-sm)',
+                background: activeFilterCount > 0 ? 'var(--primary-dim)' : 'var(--card)',
+                color: activeFilterCount > 0 ? 'var(--primary-2)' : 'var(--text2)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--r-sm)',
+                cursor: 'pointer',
+              }}
+            >
+              Filters {activeFilterCount > 0 && `(${activeFilterCount})`}
+            </button>
+          )}
+        </div>
+
+        {/* Filter bar (desktop: always visible; mobile: togglable) */}
+        {(isDesktop || showMobileFilters) && (
+          <div
+            style={{
+              padding: '10px 12px',
+              background: 'var(--card)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--r)',
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 8,
+              alignItems: 'center',
+            }}
+          >
+            <select
+              value={project}
+              onChange={(e) => setProject(e.target.value)}
+              style={selectStyle}
+              aria-label="Project filter"
+            >
+              <option value="">All projects</option>
+              {(data?.projects || []).map((p) => (
+                <option key={p.child_key} value={p.child_key}>
+                  {p.display_name}
+                </option>
+              ))}
+            </select>
+            <select
+              value={bucket}
+              onChange={(e) => setBucket(e.target.value)}
+              style={selectStyle}
+              aria-label="Bucket filter"
+            >
+              {BUCKET_OPTS.map((b) => (
+                <option key={b.value} value={b.value}>
+                  {b.label}
+                </option>
+              ))}
+            </select>
+            <select
+              value={priority}
+              onChange={(e) => setPriority(e.target.value)}
+              style={selectStyle}
+              aria-label="Priority filter"
+            >
+              {PRIORITY_OPTS.map((p) => (
+                <option key={p.value} value={p.value}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+            <input
+              list="mission-options"
+              value={mission}
+              onChange={(e) => setMission(e.target.value)}
+              placeholder="Mission…"
+              style={{ ...selectStyle, minWidth: 140 }}
+              aria-label="Mission filter"
+            />
+            <datalist id="mission-options">
+              {missionOptions.map((m) => <option key={m} value={m} />)}
+            </datalist>
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search text, mission, code…"
+              style={{ ...selectStyle, flex: 1, minWidth: 160 }}
+              aria-label="Search"
+            />
+            <label
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: 'var(--t-sm)',
+                color: 'var(--text2)',
+                cursor: 'pointer',
+                userSelect: 'none',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={showCompleted}
+                onChange={(e) => setShowCompleted(e.target.checked)}
+              />
+              Show completed
+            </label>
+            {activeFilterCount > 0 && (
+              <button
+                onClick={clearFilters}
+                style={{
+                  fontSize: 'var(--t-sm)',
+                  color: 'var(--text3)',
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '6px 8px',
+                  textDecoration: 'underline',
+                }}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Quick-add */}
+        <form
+          onSubmit={handleQuickAdd}
+          style={{
+            padding: '8px 10px',
+            background: 'var(--card)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--r)',
+            display: 'flex',
+            gap: 6,
+            alignItems: 'center',
+            flexWrap: 'wrap',
+          }}
+        >
+          <select
+            value={quickAddProject}
+            onChange={(e) => setQuickAddProject(e.target.value)}
+            style={{ ...selectStyle, maxWidth: 140 }}
+            aria-label="Quick-add project"
+          >
+            {(data?.projects || []).map((p) => (
+              <option key={p.child_key} value={p.child_key}>
+                {p.display_name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={quickAddBucket}
+            onChange={(e) => setQuickAddBucket(e.target.value)}
+            style={selectStyle}
+            aria-label="Quick-add bucket"
+          >
+            <option value="THIS_WEEK">Week</option>
+            <option value="THIS_MONTH">Month</option>
+            <option value="PARKED">Parked</option>
+          </select>
+          <input
+            value={quickAddText}
+            onChange={(e) => setQuickAddText(e.target.value)}
+            placeholder="Add task…"
+            style={{ ...selectStyle, flex: 1, minWidth: 180 }}
+            aria-label="Quick-add text"
+          />
+          <button
+            type="submit"
+            disabled={submitting || !quickAddText.trim() || !quickAddProject}
+            style={{
+              padding: '6px 14px',
+              fontSize: 'var(--t-sm)',
+              background: 'var(--primary)',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 'var(--r-sm)',
+              cursor: submitting ? 'wait' : 'pointer',
+              opacity: submitting || !quickAddText.trim() || !quickAddProject ? 0.4 : 1,
+              fontWeight: 600,
+            }}
+          >
+            {submitting ? '…' : 'Add'}
+          </button>
+        </form>
+
+        {/* Task list */}
+        {loading && !data ? (
+          <div className="flex items-center justify-center" style={{ height: 180 }}>
+            <div className="w-6 h-6 rounded-full border-2 border-[var(--primary)] border-t-transparent animate-spin" />
+          </div>
+        ) : !data || tasksAsItems.length === 0 ? (
+          <div
+            style={{
+              textAlign: 'center',
+              padding: '48px 24px',
+              background: 'var(--card)',
+              border: '1px dashed var(--border)',
+              borderRadius: 'var(--r)',
+              color: 'var(--text3)',
+              fontSize: 'var(--t-sm)',
+            }}
+          >
+            {activeFilterCount > 0 ? 'No tasks match these filters' : 'No open tasks'}
+          </div>
+        ) : (
+          <div>
+            <TaskList
+              tasks={tasksAsItems}
+              showProject={!project}
+              onTaskTap={(t) => setSelectedTaskId(t.id)}
+              onToggleComplete={(id) => handleToggle(id)}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Task detail panel / modal */}
+      {selectedTask && (
+        <TaskDetail
+          task={selectedTask}
+          subtasks={selectedSubtasks}
+          onClose={() => setSelectedTaskId(null)}
+          onUpdate={(id, fields) => { handleUpdate(id, fields); }}
+          onDelete={(id) => { handleDelete(id); }}
+          onAddSubtask={(parentId, text) => { handleAddSubtask(parentId, text); }}
+        />
+      )}
+
+      {/* Toast */}
+      {toast && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: 24,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: 'var(--card)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--r)',
+            padding: '8px 16px',
+            fontSize: 'var(--t-sm)',
+            color: 'var(--text)',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            zIndex: 1000,
+          }}
+        >
+          {toast}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const selectStyle: React.CSSProperties = {
+  padding: '6px 10px',
+  fontSize: 'var(--t-sm)',
+  background: 'var(--bg)',
+  border: '1px solid var(--border)',
+  borderRadius: 'var(--r-sm)',
+  color: 'var(--text)',
+  outline: 'none',
+  height: 32,
+};
