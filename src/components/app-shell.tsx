@@ -3,6 +3,7 @@
 import { Suspense } from 'react';
 import { Sidebar } from './sidebar';
 import { Topbar } from './topbar';
+import { NoteModal } from './note-modal';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
@@ -36,6 +37,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {children}
         </main>
       </div>
+      <NoteModal />
     </div>
   );
 }

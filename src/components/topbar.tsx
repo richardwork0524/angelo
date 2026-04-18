@@ -82,7 +82,13 @@ export function Topbar() {
   const fmtK = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n);
 
   function openQuickNote() {
-    window.dispatchEvent(new Event('quick-capture'));
+    const detail = mounted
+      ? {
+          project_key: mounted.project_key,
+          attach_hint: mounted.handoff_code || mounted.scope_name || null,
+        }
+      : {};
+    window.dispatchEvent(new CustomEvent('quick-note', { detail }));
   }
 
   return (

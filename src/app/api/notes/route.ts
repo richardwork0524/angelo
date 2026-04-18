@@ -4,12 +4,16 @@ import { supabase } from "@/lib/supabase";
 const VALID_NOTE_TYPES = ["GAP", "IDEA", "OBSERVATION", "REVISIT"] as const;
 
 export async function GET(request: NextRequest) {
-  const projectKey = request.nextUrl.searchParams.get("project");
-  const noteType = request.nextUrl.searchParams.get("type");
-  const resolved = request.nextUrl.searchParams.get("resolved");
-  const sessionLogId = request.nextUrl.searchParams.get("session_log_id");
-  const limit = parseInt(request.nextUrl.searchParams.get("limit") || "50");
-  const offset = parseInt(request.nextUrl.searchParams.get("offset") || "0");
+  const sp = request.nextUrl.searchParams;
+  const projectKey = sp.get("project");
+  const noteType = sp.get("type");
+  const resolved = sp.get("resolved");
+  const feature = sp.get("feature");
+  const mission = sp.get("mission");
+  const q = sp.get("q");
+  const sessionLogId = sp.get("session_log_id");
+  const limit = parseInt(sp.get("limit") || "200");
+  const offset = parseInt(sp.get("offset") || "0");
 
   try {
     let query = supabase
@@ -18,21 +22,48 @@ export async function GET(request: NextRequest) {
       .order("created_at", { ascending: false })
       .range(offset, offset + limit - 1);
 
-    if (projectKey) query = query.eq("project_key", projectKey);
-    if (noteType) query = query.eq("note_type", noteType.toUpperCase());
-    if (resolved !== null && resolved !== undefined) {
-      query = query.eq("resolved", resolved === "true");
-    }
+    if (projectKey && projectKey !== "all") query = query.eq("project_key", projectKey);
+    if (noteType && noteType !== "all") query = query.eq("note_type", noteType.toUpperCase());
+    if (resolved && resolved !== "all") query = query.eq("resolved", resolved === "true");
+    if (feature && feature !== "all") query = query.eq("feature", feature);
+    if (mission && mission !== "all") query = query.eq("mission", mission);
     if (sessionLogId) query = query.eq("session_log_id", sessionLogId);
+    if (q && q.trim()) {
+      const term = q.trim().replace(/[%_]/g, "");
+      query = query.ilike("text", `%${term}%`);
+    }
 
     const { data: notes, count, error } = await query;
     if (error) throw error;
+
+    const byTypeRes = await supabase
+      .from("angelo_notes")
+      .select("note_type,resolved");
+
+    const by_type = { GAP: 0, IDEA: 0, OBSERVATION: 0, REVISIT: 0 } as Record<string, number>;
+    let unresolved_total = 0;
+    let total_all = 0;
+    if (byTypeRes.data) {
+      const rows = byTypeRes.data as { note_type: string; resolved: boolean }[];
+      total_all = rows.length;
+      for (const row of rows) {
+        if (!row.resolved && row.note_type in by_type) {
+          by_type[row.note_type] = (by_type[row.note_type] ?? 0) + 1;
+          unresolved_total += 1;
+        }
+      }
+    }
 
     return NextResponse.json({
       notes: notes || [],
       total: count || 0,
       offset,
       limit,
+      stats: {
+        unresolved_total,
+        total_all,
+        by_type,
+      },
     });
   } catch (err) {
     console.error("Notes GET error:", err);

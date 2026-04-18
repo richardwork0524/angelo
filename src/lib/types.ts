@@ -146,6 +146,23 @@ export interface SkillInventory {
 export type HandoffStatus = 'open' | 'picked_up' | 'completed' | 'blocked';
 export type HandoffPurpose = 'create' | 'debug' | 'update';
 
+export type NoteType = 'GAP' | 'IDEA' | 'OBSERVATION' | 'REVISIT';
+
+export interface Note {
+  id: string;
+  project_key: string;
+  text: string;
+  note_type: NoteType;
+  feature: string | null;
+  mission: string | null;
+  version: string | null;
+  session_log_id: string | null;
+  resolved: boolean;
+  revisit_version: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Handoff {
   id: string;
   handoff_code: string | null;

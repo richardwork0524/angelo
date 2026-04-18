@@ -94,7 +94,13 @@ export default function HomePage() {
   }
 
   function handleNewNote() {
-    window.dispatchEvent(new Event('quick-capture'));
+    const detail = mounted
+      ? {
+          project_key: mounted.project_key,
+          attach_hint: mounted.handoff_code || mounted.scope_name || null,
+        }
+      : {};
+    window.dispatchEvent(new CustomEvent('quick-note', { detail }));
   }
 
   if (loading) {
@@ -429,7 +435,12 @@ function MountedHero({
           Open Full Detail →
         </button>
         <button
-          onClick={() => window.dispatchEvent(new Event('quick-capture'))}
+          onClick={() => window.dispatchEvent(new CustomEvent('quick-note', {
+            detail: {
+              project_key: handoff.project_key,
+              attach_hint: handoff.handoff_code || handoff.scope_name || null,
+            },
+          }))}
           className="transition-colors hover:bg-[var(--card-alt)]"
           style={{
             padding: '9px 14px',
