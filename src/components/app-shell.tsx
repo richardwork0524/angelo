@@ -1,41 +1,41 @@
 'use client';
 
-import { Suspense, useCallback } from 'react';
-import { useBreakpoint } from '@/hooks/useBreakpoint';
-import { BottomNav } from './bottom-nav';
+import { Suspense } from 'react';
 import { Sidebar } from './sidebar';
+import { Topbar } from './topbar';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const isDesktop = useBreakpoint(768);
-
-  const handleCapture = useCallback(() => {
-    window.dispatchEvent(new Event('quick-capture'));
-  }, []);
-
-  if (isDesktop) {
-    return (
-      <div className="flex h-screen overflow-hidden bg-[var(--bg)]">
-        <Suspense fallback={
-          <aside className="w-[280px] shrink-0 h-screen bg-[var(--surface)] border-r border-[var(--border)]">
-            <div className="px-5 py-5">
-              <div className="h-5 w-24 bg-[var(--card)] animate-pulse rounded" />
-              <div className="h-3 w-32 bg-[var(--card)] animate-pulse rounded mt-2" />
-            </div>
-          </aside>
-        }>
+  return (
+    <div className="flex flex-col" style={{ height: '100vh' }}>
+      <Topbar />
+      <div
+        className="flex-1 min-h-0"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '220px 1fr',
+          overflow: 'hidden',
+        }}
+      >
+        <Suspense
+          fallback={
+            <aside
+              style={{
+                width: 220,
+                background: 'var(--surface)',
+                borderRight: '1px solid var(--border)',
+                padding: 20,
+              }}
+            >
+              <div className="h-4 w-20 rounded animate-pulse" style={{ background: 'var(--card-alt)' }} />
+            </aside>
+          }
+        >
           <Sidebar />
         </Suspense>
-        <main className="flex-1 h-screen overflow-hidden">{children}</main>
+        <main className="overflow-y-auto min-h-0" style={{ background: 'var(--bg)' }}>
+          {children}
+        </main>
       </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col h-[100dvh] overflow-hidden bg-[var(--bg)] max-w-[100vw]">
-      <main className="flex-1 overflow-y-auto overflow-x-hidden min-h-0" style={{ paddingBottom: 'calc(60px + var(--safe-b))' }}>
-        {children}
-      </main>
-      <BottomNav onCapture={handleCapture} />
     </div>
   );
 }
