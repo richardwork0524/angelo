@@ -116,8 +116,8 @@ export default function HomePage() {
     );
   }
 
-  const today = today || { cost: 0, input_tokens: 0, output_tokens: 0, tokens: 0, sessions: 0 };
-  const yesterday = yesterday || { cost: 0, input_tokens: 0, output_tokens: 0, tokens: 0, sessions: 0 };
+  const today: Stats = data.stats_today || { cost: 0, input_tokens: 0, output_tokens: 0, tokens: 0, sessions: 0 };
+  const yesterday: Stats = data.stats_yesterday || { cost: 0, input_tokens: 0, output_tokens: 0, tokens: 0, sessions: 0 };
   const sessionsDelta = absDelta(today.sessions, yesterday.sessions);
   const tokensDelta = pctDelta(today.tokens, yesterday.tokens);
   const costDelta = pctDelta(today.cost, yesterday.cost);
