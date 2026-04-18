@@ -97,7 +97,7 @@ export default function SessionPage() {
   const { id } = useParams<{ id: string }>();
   const [session, setSession] = useState<SessionDetail | null>(null);
   const [events, setEvents] = useState<SessionEvent[]>([]);
-  const [touchedTasks, setTouchedTasks] = useState<Task[]>([]);
+  const [touchedTasks, setTouchedTasks] = useState<Pick<Task, 'id' | 'text' | 'task_code' | 'project_key' | 'bucket' | 'priority' | 'completed' | 'mission' | 'parent_task_id'>[]>([]);
   const [emittedHandoffs, setEmittedHandoffs] = useState<Handoff[]>([]);
   const [mountedHandoffs, setMountedHandoffs] = useState<Handoff[]>([]);
   const [loading, setLoading] = useState(true);

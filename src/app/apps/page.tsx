@@ -28,7 +28,7 @@ interface EditState {
   kind: Kind;
   id?: string;
   parentId?: string;
-  initial?: Partial<App & AppModule & Feature>;
+  initial?: Partial<App> | Partial<AppModule> | Partial<Feature>;
 }
 
 export default function AppsPage() {
