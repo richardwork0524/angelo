@@ -1,3 +1,5 @@
+export type EntityType = 'company' | 'app' | 'game' | 'shell' | 'meta';
+
 export interface Project {
   id: string;
   child_key: string;
@@ -14,6 +16,23 @@ export interface Project {
   context_status: string | null;
   current_version: string | null;
   level: number | null;
+  entity_type: EntityType | null;
+  updated_at: string | null;
+}
+
+export interface EntitySummary {
+  child_key: string;
+  display_name: string;
+  entity_type: EntityType;
+  parent_key: string | null;
+  brief: string | null;
+  current_version: string | null;
+  status: string | null;
+  build_phase: string | null;
+  last_session_date: string | null;
+  children_count: number;
+  tasks_open: number;
+  tasks_total: number;
   updated_at: string | null;
 }
 

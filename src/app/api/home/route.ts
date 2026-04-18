@@ -85,10 +85,11 @@ export async function GET() {
         .select("id", { count: "exact", head: true })
         .gte("session_date", thirtyDaysAgoStr),
 
-      // Sidebar count: entities
+      // Sidebar count: entities (rows with entity_type IS NOT NULL — excludes folder rows)
       supabase
         .from("angelo_projects")
-        .select("id", { count: "exact", head: true }),
+        .select("id", { count: "exact", head: true })
+        .not("entity_type", "is", null),
 
       // Sidebar count: hook errors in last 24h
       supabase

@@ -1,0 +1,126 @@
+import { NextResponse } from "next/server";
+import { supabase } from "@/lib/supabase";
+import type { EntityType, EntitySummary } from "@/lib/types";
+
+interface ProjectRow {
+  child_key: string;
+  display_name: string;
+  entity_type: EntityType | null;
+  parent_key: string | null;
+  brief: string | null;
+  current_version: string | null;
+  status: string | null;
+  build_phase: string | null;
+  last_session_date: string | null;
+  updated_at: string | null;
+}
+
+interface TaskRow {
+  project_key: string;
+  completed: boolean;
+}
+
+export async function GET() {
+  try {
+    const [projectsRes, tasksRes] = await Promise.all([
+      supabase
+        .from("angelo_projects")
+        .select("child_key, display_name, entity_type, parent_key, brief, current_version, status, build_phase, last_session_date, updated_at")
+        .order("entity_type")
+        .order("child_key"),
+      supabase
+        .from("angelo_tasks")
+        .select("project_key, completed"),
+    ]);
+
+    if (projectsRes.error) throw projectsRes.error;
+    if (tasksRes.error) throw tasksRes.error;
+
+    const allProjects = (projectsRes.data || []) as ProjectRow[];
+    const allTasks = (tasksRes.data || []) as TaskRow[];
+
+    // Build parent → children map (one pass)
+    const childrenByParent = new Map<string, ProjectRow[]>();
+    for (const p of allProjects) {
+      if (!p.parent_key) continue;
+      const arr = childrenByParent.get(p.parent_key) || [];
+      arr.push(p);
+      childrenByParent.set(p.parent_key, arr);
+    }
+
+    // Recursive descendant key collection
+    function descendantKeys(key: string): string[] {
+      const out = [key];
+      const queue = [key];
+      while (queue.length) {
+        const k = queue.shift()!;
+        const kids = childrenByParent.get(k) || [];
+        for (const kid of kids) {
+          out.push(kid.child_key);
+          queue.push(kid.child_key);
+        }
+      }
+      return out;
+    }
+
+    // Build task counts by project_key (one pass)
+    const tasksByKey = new Map<string, { open: number; total: number }>();
+    for (const t of allTasks) {
+      const c = tasksByKey.get(t.project_key) || { open: 0, total: 0 };
+      c.total++;
+      if (!t.completed) c.open++;
+      tasksByKey.set(t.project_key, c);
+    }
+
+    const entities: EntitySummary[] = allProjects
+      .filter((p) => p.entity_type !== null)
+      .map((p) => {
+        const keys = descendantKeys(p.child_key);
+        let tasksOpen = 0;
+        let tasksTotal = 0;
+        for (const k of keys) {
+          const c = tasksByKey.get(k);
+          if (c) {
+            tasksOpen += c.open;
+            tasksTotal += c.total;
+          }
+        }
+        const direct = childrenByParent.get(p.child_key) || [];
+        return {
+          child_key: p.child_key,
+          display_name: p.display_name,
+          entity_type: p.entity_type!,
+          parent_key: p.parent_key,
+          brief: p.brief,
+          current_version: p.current_version,
+          status: p.status,
+          build_phase: p.build_phase,
+          last_session_date: p.last_session_date,
+          children_count: direct.length,
+          tasks_open: tasksOpen,
+          tasks_total: tasksTotal,
+          updated_at: p.updated_at,
+        };
+      });
+
+    const byType = {
+      company: entities.filter((e) => e.entity_type === "company").length,
+      app: entities.filter((e) => e.entity_type === "app").length,
+      game: entities.filter((e) => e.entity_type === "game").length,
+      shell: entities.filter((e) => e.entity_type === "shell").length,
+      meta: entities.filter((e) => e.entity_type === "meta").length,
+    };
+
+    return NextResponse.json({
+      entities,
+      total: entities.length,
+      by_type: byType,
+    });
+  } catch (err) {
+    console.error("Entities API error:", err);
+    return NextResponse.json(
+      { error: "Failed to load entities" },
+      { status: 500 }
+    );
+  }
+}
