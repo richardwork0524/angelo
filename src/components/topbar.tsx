@@ -7,7 +7,8 @@ import { cachedFetch } from '@/lib/cache';
 interface MountedHandoff {
   id: string;
   handoff_code?: string | null;
-  title?: string | null;
+  scope_name?: string | null;
+  project_key?: string | null;
 }
 
 interface TokenSummary {
@@ -48,17 +49,15 @@ export function Topbar() {
       try {
         const data = await cachedFetch<{
           mounted_handoffs?: MountedHandoff[];
-          hero?: { session_id?: string } | null;
-          stats_today?: { cost?: number; input_tokens?: number; output_tokens?: number } | null;
+          stats_today?: { cost?: number; input_tokens?: number; output_tokens?: number; tokens?: number } | null;
         }>('/api/home', 15000);
         if (cancelled) return;
-        const m = data.mounted_handoffs?.[0];
-        setMounted(m || null);
+        setMounted(data.mounted_handoffs?.[0] || null);
         const s = data.stats_today;
         if (s) {
           setTokens({
             today_cost: s.cost || 0,
-            today_tokens: (s.input_tokens || 0) + (s.output_tokens || 0),
+            today_tokens: s.tokens ?? ((s.input_tokens || 0) + (s.output_tokens || 0)),
           });
         }
       } catch {
@@ -149,7 +148,7 @@ export function Topbar() {
                 {mounted.handoff_code || mounted.id.slice(0, 8)}
               </span>
               <span className="max-w-[180px] truncate" style={{ color: 'var(--text)', fontWeight: 500 }}>
-                {mounted.title || 'Untitled'}
+                {mounted.scope_name || 'Untitled'}
               </span>
             </>
           ) : (
@@ -174,7 +173,7 @@ export function Topbar() {
                   Currently Mounted
                 </div>
                 <div style={{ fontSize: 'var(--t-h3)', fontWeight: 600, marginTop: 6 }}>
-                  {mounted.title || 'Untitled'}
+                  {mounted.scope_name || 'Untitled'}
                 </div>
                 <div style={{ fontSize: 'var(--t-sm)', color: 'var(--text3)', fontFamily: 'ui-monospace, monospace', marginTop: 4 }}>
                   {mounted.handoff_code || mounted.id}

@@ -1,13 +1,17 @@
 'use client';
 
 const STATUS_STYLES: Record<string, { bg: string; text: string }> = {
-  ACTIVE:   { bg: 'var(--green-dim)',   text: 'var(--green)' },
-  DEPLOYED: { bg: 'var(--green-dim)',   text: 'var(--green)' },
-  BUILDING: { bg: 'var(--accent-dim)',  text: 'var(--accent)' },
-  PLANNING: { bg: 'var(--purple-dim)',  text: 'var(--purple)' },
-  TESTING:  { bg: 'var(--yellow-dim)',  text: 'var(--yellow)' },
-  BLOCKED:  { bg: 'var(--red-dim)',     text: 'var(--red)' },
-  ARCHIVED: { bg: 'var(--card2)',       text: 'var(--text3)' },
+  ACTIVE:    { bg: 'var(--green-dim)',   text: 'var(--green)' },
+  DEPLOYED:  { bg: 'var(--green-dim)',   text: 'var(--green)' },
+  BUILDING:  { bg: 'var(--accent-dim)',  text: 'var(--accent)' },
+  PLANNING:  { bg: 'var(--purple-dim)',  text: 'var(--purple)' },
+  TESTING:   { bg: 'var(--yellow-dim)',  text: 'var(--yellow)' },
+  BLOCKED:   { bg: 'var(--red-dim)',     text: 'var(--red)' },
+  ARCHIVED:  { bg: 'var(--card2)',       text: 'var(--text3)' },
+  // Handoff statuses
+  OPEN:      { bg: 'var(--orange-dim)',  text: 'var(--orange)' },
+  PICKED_UP: { bg: 'var(--primary-dim)', text: 'var(--primary-2)' },
+  COMPLETED: { bg: 'var(--green-dim)',   text: 'var(--green)' },
 };
 
 interface StatusBadgeProps {

@@ -75,7 +75,7 @@ export function patchHandoff(
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: handoffId, status }),
       }),
-    cacheKeys: ['/api/handoffs'],
+    cacheKeys: ['/api/handoffs', '/api/home'],
     ...opts,
   });
 }
@@ -92,7 +92,7 @@ export function deleteHandoff(
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: handoffId }),
       }),
-    cacheKeys: ['/api/handoffs'],
+    cacheKeys: ['/api/handoffs', '/api/home'],
     ...opts,
   });
 }

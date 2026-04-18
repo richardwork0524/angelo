@@ -1,117 +1,77 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { TokenPill } from '@/components/token-pill';
-import { ColorLegend } from '@/components/color-legend';
-import { SessionPopup } from '@/components/popups/session-popup';
-import { ChainPopup } from '@/components/popups/chain-popup';
-import { SystemPopup } from '@/components/popups/system-popup';
-import { StepTracker } from '@/components/step-tracker';
-import { IdBadge } from '@/components/id-badge';
-import { patchHandoff } from '@/lib/mutate';
-import { SURFACE_COLORS } from '@/lib/constants';
 import { cachedFetch } from '@/lib/cache';
-import { useBreakpoint } from '@/hooks/useBreakpoint';
+import { patchHandoff } from '@/lib/mutate';
+import { StatusBadge } from '@/components/status-badge';
 import type { Handoff } from '@/lib/types';
 
-/* ── Types ── */
+const DAILY_COST_CAP = 6;
 
-interface Session {
-  id: string;
-  session_code?: string | null;
-  project_key: string;
-  session_date: string;
-  title: string;
-  surface: string | null;
-  summary: string | null;
-  chain_id: string | null;
-  entry_point: string | null;
-  input_tokens: number | null;
-  output_tokens: number | null;
-  cost_usd: number | null;
-  tags: string[] | null;
-  mission: string | null;
-  handoff_context: Record<string, unknown> | null;
-  task_ids?: string[] | null;
-}
-
-interface Chain {
-  chain_id: string;
-  project_key: string;
-  title: string;
-  entry_point: string | null;
-  session_count: number;
-  total_cost: number;
-  latest_date: string;
-  latest_title: string;
-}
-
-interface TokenStats {
-  today: { input: number; output: number; cost: number; sessions: number };
-  week: { input: number; output: number; cost: number; sessions: number; avg_daily: number };
-  daily_costs: { date: string; cost: number }[];
-}
-
-interface RoutineTask {
-  id: string;
-  project_key: string;
-  text: string;
-  priority: string | null;
-  bucket: string;
-  mission: string | null;
-  task_type: string | null;
-}
-
-interface HookLog {
-  hook_name: string;
-  action: string;
-  project_key: string | null;
-  detail: string | null;
-  created_at: string;
-  status: string | null;
+interface Stats {
+  cost: number;
+  input_tokens: number;
+  output_tokens: number;
+  tokens: number;
+  sessions: number;
 }
 
 interface HomeData {
-  hero: Session | null;
-  latest_handoff: Handoff | null;
-  open_handoffs: Handoff[];
-  recent_sessions: Session[];
-  chains: Chain[];
-  token_stats: TokenStats;
-  routine: RoutineTask[];
-  system: {
-    health: string;
-    recent_hooks: HookLog[];
-    error_count: number;
-  };
+  mounted_handoffs: Handoff[];
+  recent_handoffs: Handoff[];
+  stats_today: Stats;
+  stats_yesterday: Stats;
 }
 
-/* ── Helpers ── */
+function fmtDate(): string {
+  return new Date().toLocaleDateString('en-GB', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+function fmtK(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1)}k`;
+  return String(n);
+}
+
+function fmtTokens(n: number): string {
+  return n.toLocaleString('en-US');
+}
 
 function timeAgo(ts: string): string {
   const mins = Math.floor((Date.now() - new Date(ts).getTime()) / 60000);
-  if (mins < 60) return mins <= 0 ? 'just now' : `${mins}m ago`;
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
   const hrs = Math.floor(mins / 60);
   if (hrs < 24) return `${hrs}h ago`;
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-function fmtTokens(n: number): string {
-  return n >= 1000 ? `${(n / 1000).toFixed(0)}K` : String(n);
+function pctDelta(today: number, yesterday: number): { label: string; dir: 'up' | 'down' | 'flat' } {
+  if (yesterday === 0 && today === 0) return { label: '—', dir: 'flat' };
+  if (yesterday === 0) return { label: 'new', dir: 'up' };
+  const delta = ((today - yesterday) / yesterday) * 100;
+  const rounded = Math.round(delta);
+  if (rounded === 0) return { label: '0%', dir: 'flat' };
+  return { label: `${Math.abs(rounded)}%`, dir: rounded > 0 ? 'up' : 'down' };
 }
 
-/* ── Homepage ── */
+function absDelta(today: number, yesterday: number): { label: string; dir: 'up' | 'down' | 'flat' } {
+  const delta = today - yesterday;
+  if (delta === 0) return { label: '0', dir: 'flat' };
+  return { label: String(Math.abs(delta)), dir: delta > 0 ? 'up' : 'down' };
+}
 
 export default function HomePage() {
   const router = useRouter();
-  const isDesktop = useBreakpoint(768);
   const [data, setData] = useState<HomeData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [copyLabel, setCopyLabel] = useState('Copy Handoff');
-  const [popupSession, setPopupSession] = useState<Session | null>(null);
-  const [popupChain, setPopupChain] = useState<Chain | null>(null);
-  const [showSystemPopup, setShowSystemPopup] = useState(false);
 
   const fetchHome = useCallback(async () => {
     try {
@@ -125,29 +85,23 @@ export default function HomePage() {
 
   useEffect(() => { fetchHome(); }, [fetchHome]);
 
-  function handleCopyHandoff() {
-    if (!data?.hero) return;
-    const h = data.hero;
-    const text = [
-      `# ${h.title}`,
-      `Project: ${h.project_key} | Surface: ${h.surface} | Date: ${h.session_date}`,
-      h.chain_id ? `Chain: ${h.chain_id}` : null,
-      h.entry_point ? `Entry: ${h.entry_point}` : null,
-      h.cost_usd ? `Cost: $${Number(h.cost_usd).toFixed(2)}` : null,
-      '',
-      h.summary || '(no summary)',
-    ].filter(Boolean).join('\n');
-    navigator.clipboard.writeText(text).then(() => {
-      setCopyLabel('Copied!');
-      setTimeout(() => setCopyLabel('Copy Handoff'), 2000);
-    });
+  const mounted = data?.mounted_handoffs?.[0] || null;
+  const recent = (data?.recent_handoffs || []).filter((h) => h.id !== mounted?.id).slice(0, 4);
+
+  function handleUnmount() {
+    if (!mounted) return;
+    patchHandoff(mounted.id, 'open', { onSuccess: () => fetchHome() });
+  }
+
+  function handleNewNote() {
+    window.dispatchEvent(new Event('quick-capture'));
   }
 
   if (loading) {
     return (
-      <div className="h-full flex items-center justify-center bg-[var(--bg)]">
+      <div className="h-full flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 rounded-full border-2 border-[var(--accent)] border-t-transparent animate-spin" />
+          <div className="w-8 h-8 rounded-full border-2 border-[var(--primary)] border-t-transparent animate-spin" />
           <span className="text-[13px] text-[var(--text3)]">Loading...</span>
         </div>
       </div>
@@ -157,354 +111,546 @@ export default function HomePage() {
   if (!data) {
     return (
       <div className="h-full flex items-center justify-center">
-        <button onClick={fetchHome} className="text-[13px] text-[var(--accent)]">Retry</button>
+        <button onClick={fetchHome} className="text-[13px] text-[var(--primary)]">Retry</button>
       </div>
     );
   }
 
-  const hero = data.hero;
-  const mounted = data.latest_handoff;
-
-  // Build all steps for mounted handoff hero
-  const heroSteps = mounted ? [
-    ...Array.from({ length: mounted.sections_completed }, (_, i) => ({
-      name: `Done ${i + 1}`,
-      status: 'done',
-    })),
-    ...(mounted.sections_remaining || []),
-  ] : [];
-
-  function handleMount(handoff: Handoff) {
-    patchHandoff(handoff.id, 'picked_up', { onSuccess: () => fetchHome() });
-  }
+  const today = today || { cost: 0, input_tokens: 0, output_tokens: 0, tokens: 0, sessions: 0 };
+  const yesterday = yesterday || { cost: 0, input_tokens: 0, output_tokens: 0, tokens: 0, sessions: 0 };
+  const sessionsDelta = absDelta(today.sessions, yesterday.sessions);
+  const tokensDelta = pctDelta(today.tokens, yesterday.tokens);
+  const costDelta = pctDelta(today.cost, yesterday.cost);
 
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-[var(--bg)]">
-      {/* Topbar */}
-      <div className="flex items-center px-6 py-3 border-b border-[var(--border)] shrink-0 gap-3">
-        <span className="text-[16px] font-semibold flex-1">Home</span>
-        <TokenPill stats={data.token_stats} />
-        <ColorLegend />
-        <div className="w-[28px] h-[28px] rounded-full bg-[var(--accent)] flex items-center justify-center text-white text-[11px] font-semibold">R</div>
-      </div>
-
-      {/* Legend bar */}
-      <div className="flex gap-2.5 px-6 py-2 border-b border-[var(--border)] shrink-0 flex-wrap items-center">
-        <LegendItem color="var(--red)" label="P0" />
-        <LegendItem color="var(--orange)" label="P1" />
-        <LegendItem color="var(--yellow)" label="P2" />
-        <div className="w-px h-3 bg-[var(--border)]" />
-        <LegendItem color="var(--accent)" label="Code" />
-        <LegendItem color="var(--green)" label="Chat" />
-        <LegendItem color="var(--purple)" label="Cowork" />
-      </div>
-
-      {/* Content: Hero strip (dual: mounted + last session) + 2x2 */}
-      <div className={`flex-1 flex flex-col gap-4 min-h-0 ${isDesktop ? 'p-5 overflow-hidden' : 'p-3 overflow-y-auto'}`}>
-
-        {/* Hero strip: ALWAYS show Last Session; ALSO show Mounted Handoff if any.
-            Addresses pain #1: see both current mounted work AND last session state. */}
-        <div className={`shrink-0 grid gap-4 ${isDesktop && mounted && hero ? 'grid-cols-2' : 'grid-cols-1'}`}>
-          {/* Mounted handoff card (when any exists) */}
-          {mounted && (
-            <div className="rounded-[16px] border border-[var(--accent)] bg-[var(--card)] shadow-lg"
-                 style={{ boxShadow: '0 0 0 1px var(--accent-dim), 0 2px 12px rgba(0,0,0,.3)' }}>
-              <div className="p-5">
-                <div className="flex items-center gap-2 mb-3 flex-wrap">
-                  <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.05em] text-[var(--accent)]">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                    {mounted.status === 'picked_up' ? 'Mounted — current work' : 'Active handoff'}
-                  </div>
-                  <IdBadge value={mounted.handoff_code} label="handoff_code" kind="code" />
-                  <IdBadge value={mounted.project_key} label="project_key" kind="key" size="xs" />
-                  <span className="text-[10px] text-[var(--text3)] uppercase tracking-[0.05em]">{mounted.scope_type}</span>
-                </div>
-                <h2 className="text-[17px] font-bold mb-3 truncate">{mounted.scope_name}</h2>
-                <div className="mb-3">
-                  <StepTracker steps={heroSteps} completed={mounted.sections_completed} />
-                </div>
-                {mounted.notes && (
-                  <p className="text-[12px] text-[var(--text3)] leading-[1.5] line-clamp-2 mb-3">{mounted.notes}</p>
-                )}
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {mounted.entry_point && <Tag bg="var(--purple-dim)" color="var(--purple)">{mounted.entry_point}</Tag>}
-                  {mounted.version && <Tag bg="var(--accent-dim)" color="var(--accent)">{mounted.version}</Tag>}
-                  <Tag bg="var(--green-dim)" color="var(--green)">{mounted.sections_completed}/{mounted.sections_total}</Tag>
-                  {mounted.vault_path && <IdBadge value={mounted.vault_path} label="vault" kind="path" size="xs" />}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Last session card (always present when any session exists) */}
-          {hero && (
-            <div className={`rounded-[16px] bg-[var(--card)] shadow-lg ${mounted ? 'border border-[var(--border2)]' : 'border border-[var(--accent)]'}`}
-                 style={{ boxShadow: mounted ? '0 2px 12px rgba(0,0,0,.2)' : '0 0 0 1px var(--accent-dim), 0 2px 12px rgba(0,0,0,.3)' }}>
-              <div className="p-5 h-full flex flex-col">
-                <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.05em] text-[var(--green)] mb-2 flex-wrap">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                  Last session
-                  <IdBadge value={hero.session_code} label="session_code" kind="code" />
-                  <IdBadge value={hero.project_key} label="project_key" kind="key" size="xs" />
-                </div>
-                <h2 className="text-[17px] font-bold mb-1 truncate">{hero.title}</h2>
-                <div className="flex items-center gap-2 text-[11px] text-[var(--text2)] mb-2 flex-wrap">
-                  <span>{hero.session_date}</span>
-                  {hero.cost_usd && (
-                    <>
-                      <span>&middot;</span>
-                      <span style={{ color: 'var(--green)' }}>
-                        {fmtTokens((hero.input_tokens || 0) + (hero.output_tokens || 0))} &middot; ${Number(hero.cost_usd).toFixed(2)}
-                      </span>
-                    </>
-                  )}
-                  {hero.task_ids && hero.task_ids.length > 0 && (
-                    <>
-                      <span>&middot;</span>
-                      <span style={{ color: 'var(--accent)' }}>{hero.task_ids.length} task{hero.task_ids.length === 1 ? '' : 's'} touched</span>
-                    </>
-                  )}
-                </div>
-                {hero.summary && (
-                  <p className="text-[12px] text-[var(--text3)] leading-[1.5] line-clamp-2 flex-1">{hero.summary}</p>
-                )}
-                <div className="flex items-center gap-2 mt-3 flex-wrap">
-                  <div className="flex gap-1 flex-wrap">
-                    {hero.surface && <Tag bg="var(--accent-dim)" color="var(--accent)">{hero.surface}</Tag>}
-                    {hero.entry_point && <Tag bg="var(--purple-dim)" color="var(--purple)">{hero.entry_point}</Tag>}
-                    {hero.mission && <Tag bg="var(--green-dim)" color="var(--green)">{hero.mission}</Tag>}
-                  </div>
-                  <div className="flex-1" />
-                  <button onClick={handleCopyHandoff}
-                          className="px-3 py-1.5 rounded-[8px] bg-[var(--accent)] text-white text-[11px] font-semibold hover:opacity-90 transition-opacity">
-                    {copyLabel}
-                  </button>
-                  <button onClick={() => setPopupSession(hero)}
-                          className="px-3 py-1.5 rounded-[8px] bg-[var(--accent-dim)] text-[var(--accent)] text-[11px] font-semibold hover:bg-[var(--accent)] hover:text-white transition-colors">
-                    View &rarr;
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Nothing yet */}
-          {!mounted && !hero && (
-            <div className="rounded-[16px] border border-dashed border-[var(--border2)] p-6 text-center text-[var(--text3)]">
-              <p className="text-[13px]">No mounted handoff and no sessions yet. Start a session from Claude Code.</p>
-            </div>
-          )}
-        </div>
-
-        {/* 2x2 Grid: Handoffs TL, Sessions TR, Chains BL, Routine+System BR */}
-        <div className={`flex-1 grid gap-3 min-h-0 ${isDesktop ? 'grid-cols-2 grid-rows-2 overflow-hidden' : 'grid-cols-1 auto-rows-min'}`}>
-          {/* TL: Handoffs */}
-          <SecCard
-            icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>}
-            iconBg="var(--orange-dim)" iconColor="var(--orange)"
-            title="Handoffs" count={(data.open_handoffs || []).length}
-            countColor="var(--orange)"
-            footer={<button onClick={() => router.push('/handoffs')} className="text-[11px] font-semibold text-[var(--accent)] hover:opacity-80">All &rarr;</button>}
-          >
-            {(data.open_handoffs || []).length === 0 ? (
-              <Empty>No open handoffs</Empty>
-            ) : (
-              (data.open_handoffs || []).slice(0, 3).map((h) => (
-                <ListItem key={h.id}
-                  dot={h.status === 'picked_up' ? 'var(--accent)' : 'var(--orange)'}
-                  title={h.scope_name}
-                  sub={<>{h.handoff_code} <span>&middot;</span> {h.project_key} <span>&middot;</span> {h.sections_completed}/{h.sections_total}</>}
-                  right={h.status === 'open' ? (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleMount(h); }}
-                      className="text-[9px] font-bold px-2 py-0.5 rounded-[4px] bg-[var(--accent)] text-white hover:opacity-80 transition-opacity"
-                    >
-                      Mount
-                    </button>
-                  ) : (
-                    <Tag bg="var(--accent-dim)" color="var(--accent)">Mounted</Tag>
-                  )}
-                />
-              ))
-            )}
-          </SecCard>
-
-          {/* TR: Recent Sessions */}
-          <SecCard
-            icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>}
-            iconBg="var(--green-dim)" iconColor="var(--green)"
-            title="Recent Sessions" count={data.recent_sessions.length + (data.hero ? 1 : 0)}
-            footer={<button onClick={() => router.push('/dashboard')} className="text-[11px] font-semibold text-[var(--accent)] hover:opacity-80">All &rarr;</button>}
-          >
-            <ExpandableList items={data.recent_sessions} max={3} emptyMsg="No recent sessions" renderItem={(s) => (
-              <ListItem key={s.id}
-                dot={SURFACE_COLORS[s.surface || ''] || 'var(--text3)'}
-                title={s.title}
-                sub={<>{s.session_date} <span>&middot;</span> {s.project_key}{s.input_tokens ? <> <span>&middot;</span> <span style={{ color: 'var(--accent)' }}>{fmtTokens(s.input_tokens)}</span></> : null}</>}
-                onClick={() => setPopupSession(s)}
-              />
-            )} />
-          </SecCard>
-
-          {/* BL: Active Chains */}
-          <SecCard
-            icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>}
-            iconBg="var(--purple-dim)" iconColor="var(--purple)"
-            title="Active Chains" count={data.chains.length}
-            countColor="var(--purple)"
-          >
-            {data.chains.slice(0, 3).map((c) => (
-              <ListItem key={c.chain_id} dot={c.session_count > 2 ? 'var(--accent)' : 'var(--orange)'}
-                title={c.chain_id}
-                sub={<>{c.latest_title} <span>&middot;</span> <span style={{ color: 'var(--green)' }}>${c.total_cost.toFixed(2)}</span></>}
-                right={<Tag bg="var(--accent-dim)" color="var(--accent)">{c.session_count}/??</Tag>}
-                onClick={() => setPopupChain(c)}
-              />
-            ))}
-            {data.chains.length === 0 && <Empty>No active chains</Empty>}
-          </SecCard>
-
-          {/* BR: Routine + System */}
-          <SecCard
-            icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>}
-            iconBg={data.system.health === 'healthy' ? 'var(--green-dim)' : 'var(--red-dim)'}
-            iconColor={data.system.health === 'healthy' ? 'var(--green)' : 'var(--red)'}
-            title="Routine & System"
-            count={data.routine.length + data.system.error_count}
-            countColor={data.system.error_count > 0 ? 'var(--red)' : 'var(--text)'}
-            onHeaderClick={() => setShowSystemPopup(true)}
-          >
-            {/* System health badge */}
-            <div className="flex items-center gap-2 mb-2">
-              <span className="w-[7px] h-[7px] rounded-full" style={{ background: data.system.health === 'healthy' ? 'var(--green)' : 'var(--red)' }} />
-              <span className="text-[12px] font-semibold" style={{ color: data.system.health === 'healthy' ? 'var(--green)' : 'var(--red)' }}>
-                {data.system.health === 'healthy' ? 'All systems healthy' : `${data.system.error_count} error(s)`}
+    <div className="h-full overflow-y-auto">
+      <div className="max-w-[1280px] mx-auto px-8 py-7">
+        {/* Page head */}
+        <div className="flex items-end justify-between mb-6 gap-4 flex-wrap">
+          <div>
+            <h1 className="font-semibold tracking-tight" style={{ fontSize: 'var(--t-h1)' }}>
+              Home
+              <span className="ml-3 font-normal" style={{ color: 'var(--text3)', fontSize: 'var(--t-body)' }}>
+                {fmtDate()}
               </span>
+            </h1>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleNewNote}
+              className="transition-colors"
+              style={{
+                padding: '8px 14px',
+                background: 'var(--card)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--r-sm)',
+                fontSize: 'var(--t-sm)',
+                color: 'var(--text2)',
+                fontWeight: 500,
+              }}
+            >
+              ＋ Note
+            </button>
+            <button
+              onClick={() => router.push('/handoffs')}
+              className="transition-opacity hover:opacity-90"
+              style={{
+                padding: '8px 14px',
+                background: 'var(--primary)',
+                border: '1px solid var(--primary)',
+                borderRadius: 'var(--r-sm)',
+                fontSize: 'var(--t-sm)',
+                color: '#fff',
+                fontWeight: 500,
+              }}
+            >
+              ＋ Handoff
+            </button>
+          </div>
+        </div>
+
+        {/* Hero — mounted handoff focus */}
+        {mounted ? (
+          <MountedHero handoff={mounted} onUnmount={handleUnmount} onOpenDetail={() => router.push('/handoffs')} />
+        ) : (
+          <EmptyHero onBrowse={() => router.push('/handoffs')} />
+        )}
+
+        {/* Sub-grid: Recent Handoffs + Today's Pulse */}
+        <div className="grid gap-6 mt-6" style={{ gridTemplateColumns: 'minmax(0, 1.5fr) minmax(280px, 1fr)' }}>
+          {/* Recent Handoffs */}
+          <section>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-semibold" style={{ fontSize: 'var(--t-h3)' }}>
+                Recent Handoffs
+                <span className="ml-2 font-normal" style={{ color: 'var(--text3)', fontSize: 'var(--t-sm)' }}>
+                  · last 7 days
+                </span>
+              </h2>
+              <Link
+                href="/handoffs"
+                className="transition-colors hover:opacity-80"
+                style={{ fontSize: 'var(--t-sm)', color: 'var(--primary-2)' }}
+              >
+                View all →
+              </Link>
             </div>
-            {/* Routine tasks */}
-            {data.routine.slice(0, 2).map((t) => (
-              <ListItem key={t.id}
-                dot={t.priority === 'P0' ? 'var(--red)' : t.priority === 'P1' ? 'var(--orange)' : 'var(--cyan)'}
-                title={t.text}
-                sub={<>{t.project_key}{t.mission ? <> <span>&middot;</span> {t.mission}</> : null}</>}
+            {recent.length === 0 ? (
+              <div
+                className="text-center"
+                style={{
+                  padding: '48px 24px',
+                  background: 'var(--card)',
+                  border: '1px dashed var(--border)',
+                  borderRadius: 'var(--r)',
+                  color: 'var(--text3)',
+                  fontSize: 'var(--t-sm)',
+                }}
+              >
+                No recent handoffs in the last 7 days.
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {recent.map((h) => (
+                  <HandoffRow key={h.id} handoff={h} onClick={() => router.push('/handoffs')} />
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* Today's Pulse */}
+          <section>
+            <h2 className="font-semibold mb-3" style={{ fontSize: 'var(--t-h3)' }}>Today&apos;s Pulse</h2>
+            <div className="flex flex-col gap-2.5">
+              <PulseStat
+                k="Sessions"
+                v={String(today.sessions)}
+                sub={`${today.sessions} today · ${yesterday.sessions} yesterday`}
+                delta={sessionsDelta}
               />
-            ))}
-            {/* Recent hooks */}
-            {data.system.recent_hooks.slice(0, 2).map((h, i) => (
-              <ListItem key={`hook-${i}`}
-                dot={h.status === 'error' ? 'var(--red)' : 'var(--green)'}
-                title={h.hook_name}
-                sub={<>{h.detail || h.action} <span>&middot;</span> {timeAgo(h.created_at)}</>}
+              <PulseStat
+                k="Tokens"
+                v={fmtTokens(today.tokens)}
+                sub={`${fmtK(today.input_tokens)} in · ${fmtK(today.output_tokens)} out`}
+                delta={tokensDelta}
               />
-            ))}
-          </SecCard>
+              <PulseStat
+                k="Cost"
+                v={`$${today.cost.toFixed(2)}`}
+                sub={`of $${DAILY_COST_CAP.toFixed(0)} daily cap`}
+                delta={costDelta}
+              />
+            </div>
+          </section>
         </div>
       </div>
-
-      {/* Popup Layer */}
-      <SessionPopup session={popupSession} open={!!popupSession} onClose={() => setPopupSession(null)} />
-      <ChainPopup chain={popupChain} open={!!popupChain} onClose={() => setPopupChain(null)} />
-      <SystemPopup system={showSystemPopup ? data.system : null} open={showSystemPopup} onClose={() => setShowSystemPopup(false)} />
     </div>
   );
 }
 
-/* ── Subcomponents ── */
+/* ── Hero: mounted handoff ── */
 
-function LegendItem({ color, label }: { color: string; label: string }) {
-  return (
-    <div className="flex items-center gap-1">
-      <span className="w-[6px] h-[6px] rounded-full" style={{ background: color }} />
-      <span className="text-[9px] font-semibold text-[var(--text3)] uppercase tracking-[0.03em]">{label}</span>
-    </div>
-  );
-}
-
-function Tag({ bg, color, children }: { bg: string; color: string; children: React.ReactNode }) {
-  return (
-    <span className="text-[9px] font-semibold px-1.5 py-[1px] rounded-[4px]" style={{ background: bg, color }}>
-      {children}
-    </span>
-  );
-}
-
-function SecCard({ icon, iconBg, iconColor, title, count, countColor, footer, onHeaderClick, children }: {
-  icon: React.ReactNode;
-  iconBg: string;
-  iconColor: string;
-  title: string;
-  count: number;
-  countColor?: string;
-  footer?: React.ReactNode;
-  onHeaderClick?: () => void;
-  children: React.ReactNode;
+function MountedHero({
+  handoff,
+  onUnmount,
+  onOpenDetail,
+}: {
+  handoff: Handoff;
+  onUnmount: () => void;
+  onOpenDetail: () => void;
 }) {
-  return (
-    <div className="flex flex-col rounded-[16px] bg-[var(--card)] shadow-lg overflow-hidden">
-      <div className={`flex items-center gap-2.5 px-4 pt-3.5 pb-0 ${onHeaderClick ? 'cursor-pointer hover:bg-[var(--card2)] rounded-t-[16px] transition-colors' : ''}`} onClick={onHeaderClick}>
-        <div className="w-8 h-8 rounded-[10px] flex items-center justify-center shrink-0" style={{ background: iconBg, color: iconColor }}>
-          {icon}
-        </div>
-        <span className="text-[13px] font-semibold flex-1">{title}</span>
-        <span className="text-[20px] font-bold tabular-nums" style={{ color: countColor || 'var(--text)' }}>{count}</span>
-      </div>
-      <div className="flex-1 overflow-y-auto px-4 py-2 min-h-0">
-        {children}
-      </div>
-      {footer && (
-        <div className="flex items-center justify-between px-4 pb-3 shrink-0">
-          {footer}
-        </div>
-      )}
-    </div>
-  );
-}
+  const progress = handoff.sections_total > 0
+    ? Math.round((handoff.sections_completed / handoff.sections_total) * 100)
+    : 0;
 
-function ListItem({ dot, title, sub, right, onClick }: {
-  dot: string;
-  title: string;
-  sub: React.ReactNode;
-  right?: React.ReactNode;
-  onClick?: () => void;
-}) {
   return (
-    <div className={`flex items-center gap-2.5 py-2 border-b border-[var(--border)] last:border-b-0 ${onClick ? 'cursor-pointer hover:bg-[var(--card2)] -mx-1 px-1 rounded-[6px]' : ''}`} onClick={onClick}>
-      <span className="w-[8px] h-[8px] rounded-full shrink-0" style={{ background: dot }} />
-      <div className="flex-1 min-w-0">
-        <p className="text-[12px] font-medium truncate">{title}</p>
-        <p className="text-[10px] text-[var(--text3)] mt-0.5 flex items-center gap-1">{sub}</p>
-      </div>
-      {right && <div className="shrink-0">{right}</div>}
-    </div>
-  );
-}
+    <div
+      className="relative overflow-hidden"
+      style={{
+        background: 'linear-gradient(135deg, rgba(99,102,241,.10) 0%, rgba(99,102,241,.02) 60%), var(--card)',
+        border: '1px solid var(--primary-hi)',
+        borderRadius: 'var(--r-lg)',
+        padding: '24px 28px',
+        display: 'grid',
+        gridTemplateColumns: '1fr auto',
+        gap: 24,
+        alignItems: 'center',
+        boxShadow: 'var(--sh)',
+      }}
+    >
+      <span
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: 4,
+          height: '100%',
+          background: 'linear-gradient(180deg, var(--primary), var(--primary-2))',
+        }}
+      />
 
-function Empty({ children }: { children: React.ReactNode }) {
-  return <p className="text-[11px] text-[var(--text3)] py-2">{children}</p>;
-}
-
-function ExpandableList<T>({ items, max, emptyMsg, renderItem }: {
-  items: T[];
-  max: number;
-  emptyMsg: string;
-  renderItem: (item: T, index: number) => React.ReactNode;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  if (items.length === 0) return <Empty>{emptyMsg}</Empty>;
-  const visible = expanded ? items : items.slice(0, max);
-  const remaining = items.length - max;
-  return (
-    <>
-      {visible.map((item, i) => renderItem(item, i))}
-      {remaining > 0 && (
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className="flex items-center gap-1 text-[10px] font-semibold text-[var(--accent)] pt-1 hover:opacity-80"
+      <div style={{ minWidth: 0 }}>
+        <div
+          className="flex items-center gap-2 mb-1.5"
+          style={{
+            fontSize: 'var(--t-tiny)',
+            color: 'var(--primary-2)',
+            textTransform: 'uppercase',
+            letterSpacing: '.08em',
+            fontWeight: 600,
+          }}
         >
-          <span className="inline-block transition-transform" style={{ transform: expanded ? 'rotate(180deg)' : 'none', fontSize: 8 }}>&#x25BC;</span>
-          {expanded ? 'Show less' : `Show ${remaining} more`}
+          <span
+            className="angelo-pulse"
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: '50%',
+              background: 'var(--primary)',
+            }}
+          />
+          Currently Working On
+        </div>
+
+        <div
+          className="truncate"
+          style={{
+            fontSize: 'var(--t-h1)',
+            fontWeight: 600,
+            letterSpacing: '-.01em',
+            marginBottom: 6,
+          }}
+        >
+          {handoff.scope_name}
+        </div>
+
+        <div
+          className="flex items-center gap-1.5 flex-wrap mb-2"
+          style={{ fontSize: 'var(--t-sm)', color: 'var(--text3)' }}
+        >
+          <span style={{ color: 'var(--text2)', fontWeight: 500 }}>{handoff.project_key}</span>
+          <span style={{ color: 'var(--text4)' }}>›</span>
+          <span style={{ textTransform: 'uppercase', letterSpacing: '.04em', fontSize: 'var(--t-tiny)', fontWeight: 600 }}>
+            {handoff.scope_type}
+          </span>
+          <span style={{ color: 'var(--text4)' }}>·</span>
+          <span style={{ fontFamily: 'ui-monospace, monospace' }}>{handoff.handoff_code || handoff.id.slice(0, 8)}</span>
+        </div>
+
+        <div className="flex items-center gap-1.5 flex-wrap mb-3">
+          {handoff.entry_point && (
+            <span
+              style={{
+                fontSize: 'var(--t-tiny)',
+                fontWeight: 600,
+                padding: '3px 8px',
+                borderRadius: 'var(--r-sm)',
+                background: 'var(--primary-dim)',
+                color: 'var(--primary-2)',
+                letterSpacing: '.04em',
+              }}
+            >
+              {handoff.entry_point}
+            </span>
+          )}
+          <StatusBadge status={handoff.status} />
+          {handoff.version && (
+            <span
+              style={{
+                fontFamily: 'ui-monospace, monospace',
+                fontSize: 'var(--t-tiny)',
+                color: 'var(--text3)',
+              }}
+            >
+              {handoff.version}
+            </span>
+          )}
+        </div>
+
+        {handoff.notes && (
+          <p
+            className="line-clamp-2"
+            style={{
+              color: 'var(--text2)',
+              fontSize: 'var(--t-sm)',
+              maxWidth: '64ch',
+              lineHeight: 1.55,
+              marginBottom: 14,
+            }}
+          >
+            {handoff.notes}
+          </p>
+        )}
+
+        {/* Progress bar */}
+        <div style={{ maxWidth: 520 }}>
+          <div className="flex items-center justify-between mb-1.5">
+            <span style={{ fontSize: 'var(--t-tiny)', color: 'var(--text3)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '.06em' }}>
+              Progress
+            </span>
+            <span style={{ fontSize: 'var(--t-tiny)', color: 'var(--text2)', fontVariantNumeric: 'tabular-nums' }}>
+              {handoff.sections_completed}/{handoff.sections_total} · {progress}%
+            </span>
+          </div>
+          <div
+            style={{
+              height: 6,
+              borderRadius: 999,
+              background: 'var(--card-alt)',
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              style={{
+                height: '100%',
+                width: `${progress}%`,
+                background: 'linear-gradient(90deg, var(--primary), var(--primary-2))',
+                transition: 'width .3s ease',
+              }}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2" style={{ minWidth: 180 }}>
+        <button
+          onClick={onOpenDetail}
+          className="transition-opacity hover:opacity-90"
+          style={{
+            padding: '9px 14px',
+            background: 'var(--primary)',
+            color: '#fff',
+            border: '1px solid var(--primary)',
+            borderRadius: 'var(--r-sm)',
+            fontSize: 'var(--t-sm)',
+            fontWeight: 500,
+          }}
+        >
+          Open Full Detail →
         </button>
-      )}
-    </>
+        <button
+          onClick={() => window.dispatchEvent(new Event('quick-capture'))}
+          className="transition-colors hover:bg-[var(--card-alt)]"
+          style={{
+            padding: '9px 14px',
+            background: 'var(--card)',
+            color: 'var(--text2)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--r-sm)',
+            fontSize: 'var(--t-sm)',
+            fontWeight: 500,
+          }}
+        >
+          ＋ Note on this
+        </button>
+        <button
+          onClick={onUnmount}
+          className="transition-colors"
+          style={{
+            padding: '9px 14px',
+            background: 'transparent',
+            color: 'var(--danger, #DC2626)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--r-sm)',
+            fontSize: 'var(--t-sm)',
+            fontWeight: 500,
+          }}
+        >
+          ⌀ Unmount
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ── Empty hero ── */
+
+function EmptyHero({ onBrowse }: { onBrowse: () => void }) {
+  return (
+    <div
+      style={{
+        background: 'var(--card)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--r-lg)',
+        padding: '32px 28px',
+        display: 'grid',
+        gridTemplateColumns: '1fr auto',
+        gap: 24,
+        alignItems: 'center',
+      }}
+    >
+      <div>
+        <div
+          style={{
+            fontSize: 'var(--t-tiny)',
+            color: 'var(--text3)',
+            textTransform: 'uppercase',
+            letterSpacing: '.08em',
+            fontWeight: 600,
+            marginBottom: 6,
+          }}
+        >
+          No handoff mounted
+        </div>
+        <div style={{ fontSize: 'var(--t-h1)', fontWeight: 600, letterSpacing: '-.01em', marginBottom: 6 }}>
+          Pick a handoff to focus on
+        </div>
+        <p style={{ color: 'var(--text2)', fontSize: 'var(--t-sm)', maxWidth: '56ch', lineHeight: 1.55 }}>
+          Mount a handoff to make it the active context. It appears here and in the top bar until you unmount.
+        </p>
+      </div>
+      <div className="flex flex-col gap-2" style={{ minWidth: 180 }}>
+        <button
+          onClick={onBrowse}
+          className="transition-opacity hover:opacity-90"
+          style={{
+            padding: '9px 14px',
+            background: 'var(--primary)',
+            color: '#fff',
+            border: '1px solid var(--primary)',
+            borderRadius: 'var(--r-sm)',
+            fontSize: 'var(--t-sm)',
+            fontWeight: 500,
+          }}
+        >
+          Browse Handoffs →
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ── Handoff row (recent list) ── */
+
+function HandoffRow({ handoff, onClick }: { handoff: Handoff; onClick: () => void }) {
+  return (
+    <div
+      onClick={onClick}
+      className="transition-all cursor-pointer hover:-translate-y-[1px]"
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '1fr auto',
+        gap: 16,
+        alignItems: 'center',
+        padding: '12px 16px',
+        background: 'var(--card)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--r)',
+        boxShadow: 'var(--sh, 0 1px 2px rgba(0,0,0,.04))',
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--primary-hi)'; }}
+      onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; }}
+    >
+      <div style={{ minWidth: 0 }}>
+        <div className="truncate" style={{ fontSize: 'var(--t-body)', fontWeight: 500, color: 'var(--text)' }}>
+          {handoff.scope_name}
+        </div>
+        <div className="flex items-center gap-1.5 flex-wrap mt-1" style={{ fontSize: 'var(--t-tiny)' }}>
+          <span style={{ color: 'var(--text2)', fontWeight: 500 }}>{handoff.project_key}</span>
+          <span style={{ color: 'var(--text4)' }}>›</span>
+          <span style={{ color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: 600 }}>
+            {handoff.scope_type}
+          </span>
+          {handoff.entry_point && (
+            <>
+              <span style={{ color: 'var(--text4)' }}>·</span>
+              <span
+                style={{
+                  padding: '1px 6px',
+                  borderRadius: 4,
+                  background: 'var(--primary-dim)',
+                  color: 'var(--primary-2)',
+                  fontWeight: 600,
+                }}
+              >
+                {handoff.entry_point}
+              </span>
+            </>
+          )}
+          <StatusBadge status={handoff.status} />
+          <span style={{ color: 'var(--text4)' }}>·</span>
+          <span style={{ color: 'var(--text3)', fontVariantNumeric: 'tabular-nums' }}>
+            {handoff.sections_completed}/{handoff.sections_total}
+          </span>
+        </div>
+      </div>
+      <div style={{ fontSize: 'var(--t-tiny)', color: 'var(--text3)', whiteSpace: 'nowrap' }}>
+        {timeAgo(handoff.updated_at)}
+      </div>
+    </div>
+  );
+}
+
+/* ── Pulse stat tile ── */
+
+function PulseStat({
+  k,
+  v,
+  sub,
+  delta,
+}: {
+  k: string;
+  v: string;
+  sub: string;
+  delta: { label: string; dir: 'up' | 'down' | 'flat' };
+}) {
+  const trendColor = delta.dir === 'up'
+    ? 'var(--success, #16A34A)'
+    : delta.dir === 'down'
+    ? 'var(--danger, #DC2626)'
+    : 'var(--text3)';
+  const trendArrow = delta.dir === 'up' ? '▲' : delta.dir === 'down' ? '▼' : '–';
+
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '1fr auto',
+        gap: 8,
+        padding: '14px 16px',
+        background: 'var(--card)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--r)',
+        alignItems: 'center',
+      }}
+    >
+      <div style={{ minWidth: 0 }}>
+        <div
+          style={{
+            fontSize: 'var(--t-tiny)',
+            color: 'var(--text3)',
+            textTransform: 'uppercase',
+            letterSpacing: '.06em',
+            fontWeight: 500,
+          }}
+        >
+          {k}
+        </div>
+        <div
+          className="truncate"
+          style={{
+            fontSize: 18,
+            fontWeight: 600,
+            fontVariantNumeric: 'tabular-nums',
+            color: 'var(--text)',
+          }}
+        >
+          {v}
+        </div>
+        <div
+          className="truncate"
+          style={{ fontSize: 'var(--t-tiny)', color: 'var(--text3)', marginTop: 2 }}
+        >
+          {sub}
+        </div>
+      </div>
+      <div
+        className="flex items-center gap-1"
+        style={{ fontSize: 'var(--t-tiny)', fontWeight: 600, color: trendColor, whiteSpace: 'nowrap' }}
+      >
+        <span>{trendArrow}</span>
+        <span>{delta.label}</span>
+      </div>
+    </div>
   );
 }
