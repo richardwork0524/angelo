@@ -1,13 +1,12 @@
-"use client";
+'use client';
 
-import { useEffect, useState, useCallback } from "react";
-import { useParams } from "next/navigation";
-import { StickyHeader } from "@/components/sticky-header";
-import { PullToRefresh } from "@/components/pull-to-refresh";
-import { ErrorBanner } from "@/components/error-banner";
-import { EmptyState } from "@/components/empty-state";
-import { Toast } from "@/components/toast";
-import { TaskDetail, type DetailTask } from "@/components/task/task-detail";
+import { useEffect, useState, useCallback } from 'react';
+import Link from 'next/link';
+import { useParams, useRouter } from 'next/navigation';
+import { StatusBadge } from '@/components/status-badge';
+import { PurposeChip, purposeFromEntry } from '@/components/handoff-card';
+import { TaskDetail, type DetailTask } from '@/components/task/task-detail';
+import { Toast } from '@/components/toast';
 
 interface MissionTask {
   id: string;
@@ -27,6 +26,32 @@ interface MissionTask {
   log: { timestamp: string; type: string; message: string }[] | null;
 }
 
+interface MissionHandoff {
+  id: string;
+  handoff_code: string | null;
+  project_key: string;
+  scope_type: string;
+  scope_name: string;
+  entry_point: string | null;
+  version: string | null;
+  sections_completed: number;
+  sections_total: number;
+  status: string;
+  purpose: 'create' | 'debug' | 'update';
+  is_mounted: boolean;
+  updated_at: string;
+}
+
+interface MissionNote {
+  id: string;
+  project_key: string;
+  text: string;
+  note_type: string;
+  mission: string | null;
+  resolved: boolean;
+  created_at: string;
+}
+
 interface MissionDetail {
   mission: string;
   stats: { open: number; completed: number; p0: number; p1: number; p2: number };
@@ -36,12 +61,27 @@ interface MissionDetail {
     parked: MissionTask[];
     completed: MissionTask[];
   };
+  project_keys: string[];
+  handoffs: MissionHandoff[];
+  notes: MissionNote[];
 }
 
-const PRIORITY_COLORS: Record<string, string> = { P0: "var(--red)", P1: "var(--orange)", P2: "var(--yellow)" };
+const PRIO_STYLE: Record<string, { bg: string; fg: string }> = {
+  P0: { bg: 'var(--danger-dim)', fg: 'var(--danger)' },
+  P1: { bg: 'var(--warn-dim)', fg: 'var(--warn)' },
+  P2: { bg: 'var(--info-dim)', fg: 'var(--info)' },
+};
+
+const SURFACE_STYLE: Record<string, { bg: string; fg: string; label: string }> = {
+  CODE:   { bg: 'var(--primary-dim)', fg: 'var(--primary-2)', label: 'X' },
+  CHAT:   { bg: 'var(--success-dim)', fg: 'var(--success)', label: 'C' },
+  COWORK: { bg: 'var(--purple-dim)',  fg: 'var(--purple)',  label: 'W' },
+  MOBILE: { bg: 'var(--warn-dim)',    fg: 'var(--warn)',    label: 'M' },
+};
 
 export default function MissionDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const missionName = decodeURIComponent(params.name as string);
 
   const [mission, setMission] = useState<MissionDetail | null>(null);
@@ -55,11 +95,11 @@ export default function MissionDetailPage() {
     try {
       setError(null);
       const res = await fetch(`/api/missions/${encodeURIComponent(missionName)}`);
-      if (!res.ok) throw new Error("Failed");
+      if (!res.ok) throw new Error('Failed');
       const data = await res.json();
       setMission(data);
     } catch {
-      setError("Failed to load mission.");
+      setError('Failed to load mission.');
     } finally {
       setLoading(false);
     }
@@ -72,126 +112,303 @@ export default function MissionDetailPage() {
   async function handleTaskUpdate(taskId: string, fields: Record<string, unknown>) {
     try {
       const res = await fetch(`/api/tasks/${taskId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(fields),
       });
-      if (!res.ok) throw new Error("Failed");
-      setToast("Updated");
+      if (!res.ok) throw new Error('Failed');
+      setToast('Updated');
       await fetchMission();
     } catch {
-      setToast("Failed to update");
+      setToast('Failed to update');
     }
   }
 
   async function handleTaskDelete(taskId: string) {
     try {
-      const res = await fetch(`/api/tasks/${taskId}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed");
-      setToast("Task deleted");
+      const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed');
+      setToast('Task deleted');
       setSelectedTask(null);
       await fetchMission();
     } catch {
-      setToast("Failed to delete");
+      setToast('Failed to delete');
     }
   }
 
-  return (
-    <div className="flex flex-col h-full min-h-0 bg-[var(--bg)]">
-      <StickyHeader title={missionName} showBack />
+  if (loading) {
+    return (
+      <div className="h-full overflow-y-auto">
+        <div className="max-w-[1280px] mx-auto px-8 py-7 flex items-center justify-center" style={{ height: 240 }}>
+          <div className="w-6 h-6 rounded-full border-2 border-[var(--primary)] border-t-transparent animate-spin" />
+        </div>
+      </div>
+    );
+  }
 
-      {error && <ErrorBanner message={error} onRetry={fetchMission} />}
-
-      <PullToRefresh onRefresh={fetchMission}>
-        {loading ? (
-          <div className="px-4 py-3 space-y-4 animate-pulse">
-            <div className="rounded-[12px] bg-[var(--card)] p-4 space-y-3">
-              <div className="h-5 w-40 bg-[var(--border)] rounded" />
-              <div className="h-3 w-56 bg-[var(--border)] rounded" />
-            </div>
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="space-y-2">
-                <div className="h-3 w-20 bg-[var(--border)] rounded" />
-                {[...Array(2)].map((_, j) => (
-                  <div key={j} className="h-10 bg-[var(--border)] rounded mx-2" />
-                ))}
-              </div>
-            ))}
+  if (error || !mission) {
+    return (
+      <div className="h-full overflow-y-auto">
+        <div className="max-w-[1280px] mx-auto px-8 py-7" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <Link href="/" style={{ color: 'var(--primary-2)', fontSize: 'var(--t-sm)' }}>← Home</Link>
+          <div
+            style={{
+              textAlign: 'center',
+              padding: '48px 24px',
+              background: 'var(--card)',
+              border: '1px dashed var(--border)',
+              borderRadius: 'var(--r)',
+              color: 'var(--text3)',
+              fontSize: 'var(--t-sm)',
+            }}
+          >
+            {error || 'Mission not found.'}
           </div>
-        ) : !mission ? (
-          <EmptyState message="Mission not found." />
-        ) : (
-          <>
-            {/* Stats card */}
-            <div className="px-4 pt-3">
-              <div className="rounded-[12px] bg-[var(--card)] p-4">
-                <div className="flex items-center gap-4 mb-2">
-                  <span className="text-[24px] font-bold text-[var(--text)] tabular-nums">{mission.stats.open}</span>
-                  <span className="text-[13px] text-[var(--text3)]">open tasks</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  {mission.stats.p0 > 0 && (
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-[7px] h-[7px] rounded-full bg-[#ff453a]" />
-                      <span className="text-[12px] text-[var(--text3)] tabular-nums">{mission.stats.p0} critical</span>
-                    </div>
-                  )}
-                  {mission.stats.p1 > 0 && (
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-[7px] h-[7px] rounded-full bg-[#ff9f0a]" />
-                      <span className="text-[12px] text-[var(--text3)] tabular-nums">{mission.stats.p1} high</span>
-                    </div>
-                  )}
-                  {mission.stats.p2 > 0 && (
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-[7px] h-[7px] rounded-full bg-[#ffd60a]" />
-                      <span className="text-[12px] text-[var(--text3)] tabular-nums">{mission.stats.p2} normal</span>
-                    </div>
-                  )}
-                  {mission.stats.completed > 0 && (
-                    <span className="text-[12px] text-[var(--text3)]">✓ {mission.stats.completed} done</span>
-                  )}
-                </div>
+        </div>
+      </div>
+    );
+  }
+
+  const totalTasks = mission.stats.open + mission.stats.completed;
+  const primaryProject = mission.project_keys[0];
+
+  return (
+    <div className="h-full overflow-y-auto" data-testid="mission-detail-page">
+      <div className="max-w-[1280px] mx-auto px-8 py-7" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, minWidth: 0 }}>
+            <button
+              onClick={() => router.back()}
+              style={{
+                width: 32, height: 32,
+                borderRadius: 'var(--r-sm)',
+                background: 'var(--card)',
+                border: '1px solid var(--border)',
+                color: 'var(--text2)',
+                cursor: 'pointer',
+                fontSize: 16,
+                flexShrink: 0,
+              }}
+              title="Back"
+            >
+              ←
+            </button>
+            <div style={{ minWidth: 0 }}>
+              <Breadcrumb project={primaryProject} mission={missionName} />
+              <h1
+                className="font-semibold tracking-tight"
+                style={{ fontSize: 'var(--t-h1)', marginTop: 6, color: 'var(--text)' }}
+              >
+                {missionName}
+              </h1>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+                <span
+                  style={{
+                    fontSize: 9,
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: '.05em',
+                    padding: '2px 6px',
+                    borderRadius: 3,
+                    background: 'var(--primary-dim)',
+                    color: 'var(--primary-2)',
+                  }}
+                >
+                  mission
+                </span>
+                <span style={{ fontSize: 'var(--t-tiny)', color: 'var(--text3)' }}>
+                  {mission.stats.completed} / {totalTasks} tasks done
+                </span>
               </div>
             </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <GhostButton disabled>＋ Note</GhostButton>
+            <PrimaryButton disabled>＋ Task</PrimaryButton>
+          </div>
+        </div>
 
-            {/* Task buckets */}
-            {mission.stats.open === 0 && mission.stats.completed === 0 ? (
-              <EmptyState message="No tasks in this mission yet." />
-            ) : (
-              <div className="px-4 py-3">
-                <BucketSection title="THIS WEEK" tasks={mission.tasks.this_week} color="var(--accent)" onTaskClick={setSelectedTask} />
-                <BucketSection title="THIS MONTH" tasks={mission.tasks.this_month} color="var(--purple)" onTaskClick={setSelectedTask} />
-                <BucketSection title="PARKED" tasks={mission.tasks.parked} color="var(--text3)" onTaskClick={setSelectedTask} />
-
-                {mission.tasks.completed.length > 0 && (
-                  <div className="mt-4">
-                    <button
-                      onClick={() => setShowCompleted(!showCompleted)}
-                      className="flex items-center gap-2 text-[12px] font-semibold text-[var(--text3)] uppercase tracking-[0.07em] mb-2 min-h-[44px]"
-                    >
-                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className={`transition-transform ${showCompleted ? "rotate-90" : ""}`}>
-                        <path d="M4 2L8 6L4 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                      </svg>
-                      <span style={{ color: "var(--green)" }}>✓</span>
-                      Completed ({mission.tasks.completed.length})
-                    </button>
-                    {showCompleted && (
-                      <div className="space-y-0.5">
-                        {mission.tasks.completed.map((t) => (
-                          <MissionTaskRow key={t.id} task={t} onClick={() => setSelectedTask(t)} />
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
+        {/* Two-col layout */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)',
+            gap: 16,
+            alignItems: 'start',
+          }}
+        >
+          {/* Main col */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {/* Explainer card */}
+            <SectionCard>
+              <div style={{ fontSize: 'var(--t-sm)', color: 'var(--text2)', lineHeight: 1.6 }}>
+                Tasks live here at the Mission level. Each task is either <strong style={{ color: 'var(--text)' }}>user-done</strong> (offline / manual) or <strong style={{ color: 'var(--text)' }}>Claude-done</strong> (executed via
+                <SurfaceTag surface="CHAT" inline /> chat,
+                <SurfaceTag surface="CODE" inline /> code,
+                <SurfaceTag surface="COWORK" inline /> cowork, or
+                <SurfaceTag surface="MOBILE" inline /> mobile).
               </div>
-            )}
-          </>
-        )}
-      </PullToRefresh>
+            </SectionCard>
 
-      {/* Task detail modal */}
+            {/* Tasks */}
+            <SectionCard>
+              <SectionHead title="Tasks" count={`${mission.stats.completed}/${totalTasks}`} />
+              {totalTasks === 0 ? (
+                <EmptyRow label="No tasks yet" />
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <BucketBlock title="This week" tasks={mission.tasks.this_week} color="var(--primary-2)" onClick={setSelectedTask} />
+                  <BucketBlock title="This month" tasks={mission.tasks.this_month} color="var(--purple)" onClick={setSelectedTask} />
+                  <BucketBlock title="Parked" tasks={mission.tasks.parked} color="var(--text3)" onClick={setSelectedTask} />
+
+                  {mission.tasks.completed.length > 0 && (
+                    <div>
+                      <button
+                        onClick={() => setShowCompleted(!showCompleted)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          fontSize: 'var(--t-tiny)',
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                          letterSpacing: '.07em',
+                          color: 'var(--text3)',
+                          background: 'transparent',
+                          border: 'none',
+                          padding: '4px 0',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ transform: showCompleted ? 'rotate(90deg)' : 'none', transition: 'transform 120ms' }}>
+                          <path d="M3 1L7 5L3 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                        </svg>
+                        <span style={{ color: 'var(--success)' }}>✓</span>
+                        Completed ({mission.tasks.completed.length})
+                      </button>
+                      {showCompleted && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 6 }}>
+                          {mission.tasks.completed.map((t) => (
+                            <TaskRow key={t.id} task={t} onClick={() => setSelectedTask(t)} />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </SectionCard>
+
+            {/* Handoffs working on this mission */}
+            {mission.handoffs.length > 0 && (
+              <SectionCard>
+                <SectionHead title="Handoffs working on this mission" count={mission.handoffs.length} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {mission.handoffs.map((h) => (
+                    <Link
+                      key={h.id}
+                      href={`/handoff/${encodeURIComponent(h.id)}`}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 10,
+                        padding: '10px 12px',
+                        background: 'var(--bg)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 'var(--r-sm)',
+                        textDecoration: 'none',
+                        color: 'inherit',
+                      }}
+                    >
+                      <span style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 'var(--t-sm)', color: 'var(--text)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {h.scope_name}
+                        </div>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4 }}>
+                          <PurposeChip purpose={h.purpose ?? purposeFromEntry(h.entry_point)} />
+                          <StatusBadge status={h.status} />
+                          <span style={{ fontSize: 'var(--t-tiny)', color: 'var(--text3)' }}>
+                            {h.sections_completed}/{h.sections_total}
+                          </span>
+                        </div>
+                      </span>
+                    </Link>
+                  ))}
+                </div>
+              </SectionCard>
+            )}
+          </div>
+
+          {/* Rail col */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {/* Stats */}
+            <SectionCard>
+              <SectionHead title="Stats" />
+              <KvList>
+                {primaryProject && (
+                  <KvRow k="Entity" v={
+                    <Link href={`/entity/${encodeURIComponent(primaryProject)}`} style={{ fontFamily: 'ui-monospace', fontSize: 11, color: 'var(--primary-2)', textDecoration: 'none' }}>
+                      {primaryProject}
+                    </Link>
+                  } />
+                )}
+                <KvRow k="Open" v={String(mission.stats.open)} />
+                <KvRow k="Completed" v={String(mission.stats.completed)} />
+                <KvRow k="Total" v={String(totalTasks)} />
+                <KvRow k="P0" v={String(mission.stats.p0)} accent={mission.stats.p0 > 0 ? 'danger' : undefined} />
+                <KvRow k="P1" v={String(mission.stats.p1)} />
+                <KvRow k="P2" v={String(mission.stats.p2)} />
+                <KvRow k="Handoffs" v={String(mission.handoffs.length)} />
+              </KvList>
+            </SectionCard>
+
+            {/* Notes */}
+            <SectionCard>
+              <SectionHead title="Notes on this mission" count={mission.notes.length} />
+              {mission.notes.length === 0 ? (
+                <EmptyRow label="No unresolved notes" />
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {mission.notes.slice(0, 6).map((n) => (
+                    <div
+                      key={n.id}
+                      style={{
+                        padding: '8px 10px',
+                        background: 'var(--bg)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 'var(--r-sm)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                        <span
+                          style={{
+                            fontSize: 9,
+                            fontWeight: 700,
+                            textTransform: 'uppercase',
+                            letterSpacing: '.05em',
+                            padding: '1px 5px',
+                            borderRadius: 3,
+                            background: 'var(--primary-dim)',
+                            color: 'var(--primary-2)',
+                          }}
+                        >
+                          {n.note_type}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 'var(--t-tiny)', color: 'var(--text2)', lineHeight: 1.5 }}>
+                        {n.text}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </SectionCard>
+          </div>
+        </div>
+      </div>
+
       {selectedTask && (
         <TaskDetail
           task={selectedTask as DetailTask}
@@ -206,52 +423,253 @@ export default function MissionDetailPage() {
   );
 }
 
-/* ── Bucket Section ── */
+function Breadcrumb({ project, mission }: { project?: string; mission: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-tiny)', color: 'var(--text3)', flexWrap: 'wrap' }}>
+      <Link href="/" style={{ color: 'var(--text3)', textDecoration: 'none' }}>Home</Link>
+      {project && (
+        <>
+          <span style={{ color: 'var(--text4)' }}>›</span>
+          <Link
+            href={`/entity/${encodeURIComponent(project)}`}
+            style={{ fontFamily: 'ui-monospace', color: 'var(--text3)', textDecoration: 'none' }}
+          >
+            {project}
+          </Link>
+        </>
+      )}
+      <span style={{ color: 'var(--text4)' }}>›</span>
+      <span style={{ fontFamily: 'ui-monospace', color: 'var(--primary-2)', fontWeight: 600 }}>{mission}</span>
+    </div>
+  );
+}
 
-function BucketSection({ title, tasks, color, onTaskClick }: { title: string; tasks: MissionTask[]; color: string; onTaskClick: (t: MissionTask) => void }) {
+function BucketBlock({ title, tasks, color, onClick }: { title: string; tasks: MissionTask[]; color: string; onClick: (t: MissionTask) => void }) {
   if (tasks.length === 0) return null;
   return (
-    <div className="mb-4">
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.07em]" style={{ color }}>{title}</span>
-        <span className="text-[11px] text-[var(--text3)]">{tasks.length}</span>
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+        <span style={{ fontSize: 'var(--t-tiny)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color }}>
+          {title}
+        </span>
+        <span style={{ fontSize: 'var(--t-tiny)', color: 'var(--text3)' }}>{tasks.length}</span>
       </div>
-      <div className="space-y-0.5">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
         {tasks.map((t) => (
-          <MissionTaskRow key={t.id} task={t} onClick={() => onTaskClick(t)} />
+          <TaskRow key={t.id} task={t} onClick={() => onClick(t)} />
         ))}
       </div>
     </div>
   );
 }
 
-/* ── Task Row ── */
-
-function MissionTaskRow({ task, onClick }: { task: MissionTask; onClick: () => void }) {
+function TaskRow({ task, onClick }: { task: MissionTask; onClick: () => void }) {
+  const prio = task.priority ? PRIO_STYLE[task.priority] : null;
+  const surface = task.surface ? SURFACE_STYLE[task.surface] : null;
   return (
     <button
       onClick={onClick}
-      className="w-full flex items-start gap-2.5 px-3 py-[10px] rounded-[8px] hover:bg-[var(--card)] transition-colors min-h-[44px] text-left"
+      style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 8,
+        padding: '8px 10px',
+        background: 'transparent',
+        border: '1px solid transparent',
+        borderRadius: 'var(--r-sm)',
+        cursor: 'pointer',
+        textAlign: 'left',
+        transition: 'all 120ms',
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.background = 'var(--card-alt)';
+        e.currentTarget.style.borderColor = 'var(--border)';
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = 'transparent';
+        e.currentTarget.style.borderColor = 'transparent';
+      }}
     >
-      {task.priority && (
-        <span
-          className="w-[7px] h-[7px] rounded-full shrink-0 mt-1.5"
-          style={{ backgroundColor: PRIORITY_COLORS[task.priority] || "var(--text3)" }}
-        />
-      )}
-      {task.task_code && (
-        <span className="text-[11px] font-mono text-[var(--accent)] shrink-0 mt-0.5">{task.task_code}</span>
-      )}
-      <span className={`flex-1 text-[14px] leading-snug ${task.completed ? "text-[var(--text3)] line-through" : "text-[var(--text)]"}`}>
+      <span
+        style={{
+          width: 14, height: 14,
+          marginTop: 2,
+          borderRadius: 3,
+          border: '1px solid var(--border)',
+          background: task.completed ? 'var(--success)' : 'transparent',
+          color: '#fff',
+          fontSize: 9,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+        }}
+      >
+        {task.completed ? '✓' : ''}
+      </span>
+      <span style={{ flex: 1, minWidth: 0, fontSize: 'var(--t-sm)', color: task.completed ? 'var(--text3)' : 'var(--text)', textDecoration: task.completed ? 'line-through' : 'none', lineHeight: 1.45 }}>
         {task.text}
       </span>
-      <div className="flex items-center gap-1.5 shrink-0">
-        {task.is_owner_action && <span className="text-[11px]">⚡</span>}
-        {task.surface && (
-          <span className="text-[9px] px-1.5 py-0.5 rounded bg-[var(--card)] text-[var(--text3)]">{task.surface}</span>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, marginTop: 1 }}>
+        {task.task_code && (
+          <span style={{ fontFamily: 'ui-monospace', fontSize: 10, color: 'var(--text4)' }}>{task.task_code}</span>
         )}
-        <span className="text-[10px] text-[var(--text3)] opacity-60">{task.project_key}</span>
-      </div>
+        {surface && (
+          <span
+            style={{
+              fontSize: 9,
+              fontWeight: 700,
+              padding: '1px 5px',
+              borderRadius: 3,
+              background: surface.bg,
+              color: surface.fg,
+              minWidth: 14,
+              textAlign: 'center',
+            }}
+          >
+            {surface.label}
+          </span>
+        )}
+        {prio && (
+          <span
+            style={{
+              fontSize: 9,
+              fontWeight: 700,
+              padding: '1px 5px',
+              borderRadius: 3,
+              background: prio.bg,
+              color: prio.fg,
+            }}
+          >
+            {task.priority}
+          </span>
+        )}
+        {task.is_owner_action && <span style={{ fontSize: 10 }}>⚡</span>}
+      </span>
+    </button>
+  );
+}
+
+function SurfaceTag({ surface, inline }: { surface: string; inline?: boolean }) {
+  const s = SURFACE_STYLE[surface];
+  if (!s) return null;
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginInline: inline ? 4 : 0,
+        fontSize: 9,
+        fontWeight: 700,
+        padding: '1px 5px',
+        borderRadius: 3,
+        background: s.bg,
+        color: s.fg,
+      }}
+    >
+      {s.label}
+    </span>
+  );
+}
+
+function SectionCard({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        background: 'var(--card)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--r-lg)',
+        padding: 16,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function SectionHead({ title, count }: { title: string; count?: string | number }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <div style={{ fontSize: 'var(--t-sm)', fontWeight: 600, color: 'var(--text)' }}>{title}</div>
+      {count !== undefined && (
+        <span
+          style={{
+            fontSize: 'var(--t-tiny)',
+            color: 'var(--text3)',
+            fontVariantNumeric: 'tabular-nums',
+            padding: '1px 6px',
+            background: 'var(--card-alt)',
+            borderRadius: 999,
+          }}
+        >
+          {count}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function EmptyRow({ label }: { label: string }) {
+  return <div style={{ fontSize: 'var(--t-sm)', color: 'var(--text4)', padding: '4px 2px' }}>{label}</div>;
+}
+
+function KvList({ children }: { children: React.ReactNode }) {
+  return <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>{children}</div>;
+}
+
+function KvRow({ k, v, accent }: { k: string; v: React.ReactNode; accent?: 'danger' }) {
+  const color = accent === 'danger' ? 'var(--danger)' : 'var(--text)';
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: 'var(--t-sm)' }}>
+      <span style={{ color: 'var(--text3)' }}>{k}</span>
+      <span style={{ color, fontVariantNumeric: 'tabular-nums', fontWeight: 500, textAlign: 'right' }}>{v}</span>
+    </div>
+  );
+}
+
+function GhostButton({ children, disabled }: { children: React.ReactNode; disabled?: boolean }) {
+  return (
+    <button
+      disabled={disabled}
+      style={{
+        padding: '8px 12px',
+        background: 'var(--card)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--r-sm)',
+        fontSize: 'var(--t-sm)',
+        color: 'var(--text2)',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.5 : 1,
+      }}
+      title={disabled ? 'Coming in a later phase' : undefined}
+    >
+      {children}
+    </button>
+  );
+}
+
+function PrimaryButton({ children, disabled }: { children: React.ReactNode; disabled?: boolean }) {
+  return (
+    <button
+      disabled={disabled}
+      style={{
+        padding: '8px 12px',
+        background: 'var(--primary)',
+        border: '1px solid var(--primary)',
+        borderRadius: 'var(--r-sm)',
+        fontSize: 'var(--t-sm)',
+        color: '#fff',
+        fontWeight: 500,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.7 : 1,
+      }}
+      title={disabled ? 'Coming in a later phase' : undefined}
+    >
+      {children}
     </button>
   );
 }

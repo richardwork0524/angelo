@@ -310,12 +310,6 @@ function DeployDetail({ data }: { data: SystemResponse['deploy'] }) {
           ))}
         </div>
       )}
-      <Link
-        href="/deployments"
-        style={{ fontSize: 'var(--t-tiny)', color: 'var(--primary-2)', textDecoration: 'none', alignSelf: 'flex-start' }}
-      >
-        View all deployments →
-      </Link>
     </>
   );
 }
@@ -330,12 +324,6 @@ function SkillDetail({ data }: { data: SystemResponse['skill'] }) {
         <MiniStat label="Undeployed" value={String(data.undeployed)} tone={data.undeployed > 0 ? 'var(--danger)' : 'var(--text)'} />
         <MiniStat label="Last updated" value={data.last_updated ? relativeTime(data.last_updated) : '—'} />
       </div>
-      <Link
-        href="/skills"
-        style={{ fontSize: 'var(--t-tiny)', color: 'var(--primary-2)', textDecoration: 'none', alignSelf: 'flex-start' }}
-      >
-        View all skills →
-      </Link>
     </>
   );
 }

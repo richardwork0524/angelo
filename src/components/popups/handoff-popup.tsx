@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { PreviewPopup, PopupHead, PopupStats, PopupFooter, PopupBtn } from '@/components/preview-popup';
 import { patchHandoff } from '@/lib/mutate';
 import type { Handoff } from '@/lib/types';
@@ -152,6 +153,13 @@ export function HandoffPopup({ handoff, open, onClose, onUpdate }: {
 
       <PopupFooter>
         <PopupBtn variant="copy" onClick={handleCopy}>{copyLabel}</PopupBtn>
+        <Link
+          href={`/handoff/${encodeURIComponent(handoff.id)}`}
+          onClick={onClose}
+          className="text-[12px] font-semibold px-3 py-1.5 rounded-[8px] text-[var(--text2)] hover:text-[var(--text)] no-underline"
+        >
+          Open full →
+        </Link>
         {handoff.status !== 'completed' && (
           <PopupBtn variant={handoff.is_mounted ? 'ghost' : 'primary'} onClick={handleToggleMount}>
             {acting ? '…' : handoff.is_mounted ? 'Unmount' : 'Mount'}

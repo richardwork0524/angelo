@@ -1,419 +1,595 @@
-"use client";
+'use client';
 
-import { useEffect, useState, useCallback } from "react";
-import { useParams } from "next/navigation";
-import Link from "next/link";
-import { supabase } from "@/lib/supabase";
-import { StickyHeader } from "@/components/sticky-header";
-import { SurfaceBadge } from "@/components/surface-badge";
-import { IdBadge } from "@/components/id-badge";
-import type { SessionLog, SessionEvent, Project, Task, Handoff } from "@/lib/types";
+import { useEffect, useState, useCallback } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { supabase } from '@/lib/supabase';
+import { StatusBadge } from '@/components/status-badge';
+import { PurposeChip, purposeFromEntry } from '@/components/handoff-card';
+import type { SessionLog, SessionEvent, Task, Handoff } from '@/lib/types';
 
-/**
- * Session detail with attribution (pain #5):
- * explicit tasks touched + handoff(s) emitted this session.
- */
 interface SessionDetail extends SessionLog {
   task_ids?: string[] | null;
 }
 
-interface HandoffData {
-  project: Project | null;
-  openTasks: Task[];
-  recentSessions: SessionLog[];
+type TouchedTask = Pick<Task, 'id' | 'text' | 'task_code' | 'project_key' | 'bucket' | 'priority' | 'completed' | 'mission' | 'parent_task_id'>;
+
+function fmtTokens(n: number): string {
+  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 }
 
-function buildHandoffText(
-  session: SessionLog,
-  events: SessionEvent[],
-  hd: HandoffData
-): string {
+const SURFACE_STYLE: Record<string, { bg: string; fg: string }> = {
+  CODE:   { bg: 'var(--primary-dim)', fg: 'var(--primary-2)' },
+  CHAT:   { bg: 'var(--success-dim)', fg: 'var(--success)' },
+  COWORK: { bg: 'var(--purple-dim)',  fg: 'var(--purple)' },
+  MOBILE: { bg: 'var(--warn-dim)',    fg: 'var(--warn)' },
+};
+
+function buildHandoffText(session: SessionDetail, events: SessionEvent[], tasks: TouchedTask[]): string {
   const lines: string[] = [];
-  lines.push(`## Session Handoff — ${session.title || "Untitled"}`);
-  lines.push(`> Project: ${session.project_key || "—"} | Surface: ${session.surface} | Date: ${session.session_date}`);
-  lines.push("");
-
+  lines.push(`## ${session.session_code || 'Session'} — ${session.title || 'Untitled'}`);
+  lines.push(`> Project: ${session.project_key || '—'} | Surface: ${session.surface} | Date: ${session.session_date}`);
+  lines.push('');
   if (session.summary) {
-    lines.push("### What was done");
+    lines.push('### What was done');
     lines.push(session.summary);
-    lines.push("");
+    lines.push('');
   }
-
   if (events.length > 0) {
-    lines.push("### Key events");
+    lines.push('### Key events');
     for (const e of events) {
-      const label = e.event_type.replace(/_/g, " ");
-      lines.push(`- **${label}**: ${e.detail || "(no detail)"}`);
+      const label = e.event_type.replace(/_/g, ' ');
+      lines.push(`- **${label}**: ${e.detail || '(no detail)'}`);
     }
-    lines.push("");
+    lines.push('');
   }
-
-  if (hd.project) {
-    lines.push("### Project context");
-    if (hd.project.brief) lines.push(`- **Brief:** ${hd.project.brief}`);
-    if (hd.project.status) lines.push(`- **Status:** ${hd.project.status}`);
-    if (hd.project.build_phase) lines.push(`- **Build phase:** ${hd.project.build_phase}`);
-    if (hd.project.current_version) lines.push(`- **Version:** ${hd.project.current_version}`);
-    if (hd.project.next_action) lines.push(`- **Next action:** ${hd.project.next_action}`);
-    lines.push("");
-  }
-
-  if (hd.openTasks.length > 0) {
-    lines.push("### Open tasks");
-    const grouped: Record<string, Task[]> = {};
-    for (const t of hd.openTasks) {
-      const b = t.bucket || "PARKED";
-      (grouped[b] ??= []).push(t);
+  if (tasks.length > 0) {
+    lines.push('### Tasks touched');
+    for (const t of tasks) {
+      lines.push(`- ${t.task_code ? `[${t.task_code}] ` : ''}${t.text}${t.completed ? ' ✓' : ''}`);
     }
-    for (const bucket of ["THIS_WEEK", "THIS_MONTH", "PARKED"]) {
-      const tasks = grouped[bucket];
-      if (!tasks?.length) continue;
-      lines.push(`**${bucket.replace("_", " ")}**`);
-      for (const t of tasks.slice(0, 10)) {
-        const pri = t.priority ? ` [${t.priority}]` : "";
-        const mis = t.mission ? ` (${t.mission})` : "";
-        lines.push(`- ${t.text}${pri}${mis}`);
-      }
-      if (tasks.length > 10) lines.push(`- ... +${tasks.length - 10} more`);
-    }
-    lines.push("");
+    lines.push('');
   }
-
-  if (hd.recentSessions.length > 0) {
-    lines.push("### Recent sessions (for continuity)");
-    for (const s of hd.recentSessions) {
-      const summ = s.summary ? ` — ${s.summary.slice(0, 80)}${s.summary.length > 80 ? "…" : ""}` : "";
-      lines.push(`- ${s.session_date} [${s.surface}] ${s.title || "Untitled"}${summ}`);
-    }
-    lines.push("");
-  }
-
-  lines.push("---");
-  lines.push("*Paste this at the start of your next session for continuity.*");
-  return lines.join("\n");
+  lines.push('### Metrics');
+  lines.push(`- ${fmtTokens((session.input_tokens || 0) + (session.output_tokens || 0))} tokens · $${(Number(session.cost_usd) || 0).toFixed(2)}`);
+  return lines.join('\n');
 }
 
-export default function SessionPage() {
+export default function SessionDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const [session, setSession] = useState<SessionDetail | null>(null);
   const [events, setEvents] = useState<SessionEvent[]>([]);
-  const [touchedTasks, setTouchedTasks] = useState<Pick<Task, 'id' | 'text' | 'task_code' | 'project_key' | 'bucket' | 'priority' | 'completed' | 'mission' | 'parent_task_id'>[]>([]);
+  const [touchedTasks, setTouchedTasks] = useState<TouchedTask[]>([]);
   const [emittedHandoffs, setEmittedHandoffs] = useState<Handoff[]>([]);
   const [mountedHandoffs, setMountedHandoffs] = useState<Handoff[]>([]);
   const [loading, setLoading] = useState(true);
-  const [handoff, setHandoff] = useState<HandoffData | null>(null);
-  const [handoffOpen, setHandoffOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copyLabel, setCopyLabel] = useState('Copy Handoff');
 
   useEffect(() => {
     if (!id) return;
     (async () => {
       const [{ data: sess }, { data: evts }, { data: createdHs }, { data: mountedHs }] = await Promise.all([
-        supabase.from("angelo_session_logs").select("*").eq("id", id).single(),
-        supabase.from("angelo_session_events").select("*").eq("session_log_id", id).order("created_at"),
-        supabase.from("angelo_handoffs").select("*").eq("created_by_session_id", id),
-        supabase.from("angelo_handoffs").select("*").eq("picked_up_by_session_id", id),
+        supabase.from('angelo_session_logs').select('*').eq('id', id).single(),
+        supabase.from('angelo_session_events').select('*').eq('session_log_id', id).order('created_at'),
+        supabase.from('angelo_handoffs').select('*').eq('created_by_session_id', id),
+        supabase.from('angelo_handoffs').select('*').eq('picked_up_by_session_id', id),
       ]);
       if (sess) setSession(sess as SessionDetail);
       if (evts) setEvents(evts);
       setEmittedHandoffs(createdHs || []);
       setMountedHandoffs(mountedHs || []);
 
-      // Fetch touched tasks via (a) session_logs.task_ids[] and (b) session_events.task_id
       const idSet = new Set<string>();
       const sessTyped = sess as SessionDetail | null;
-      if (sessTyped?.task_ids) sessTyped.task_ids.forEach((t) => idSet.add(t));
+      if (sessTyped?.task_ids) sessTyped.task_ids.forEach((t: string) => idSet.add(t));
       (evts || []).forEach((e: SessionEvent) => { if (e.task_id) idSet.add(e.task_id); });
       if (idSet.size > 0) {
         const { data: taskRows } = await supabase
-          .from("angelo_tasks")
-          .select("id, text, task_code, project_key, bucket, priority, completed, mission, parent_task_id")
-          .in("id", Array.from(idSet));
+          .from('angelo_tasks')
+          .select('id, text, task_code, project_key, bucket, priority, completed, mission, parent_task_id')
+          .in('id', Array.from(idSet));
         setTouchedTasks(taskRows || []);
       }
       setLoading(false);
     })();
   }, [id]);
 
-  const loadHandoff = useCallback(async () => {
-    if (!session?.project_key) { setHandoffOpen(true); setHandoff({ project: null, openTasks: [], recentSessions: [] }); return; }
-    const [{ data: proj }, { data: tasks }, { data: sessions }] = await Promise.all([
-      supabase.from("angelo_projects").select("*").eq("child_key", session.project_key).single(),
-      supabase.from("angelo_tasks").select("*").eq("project_key", session.project_key).eq("completed", false).order("priority").order("created_at"),
-      supabase.from("angelo_session_logs").select("*").eq("project_key", session.project_key).order("session_date", { ascending: false }).limit(5),
-    ]);
-    setHandoff({ project: proj, openTasks: tasks || [], recentSessions: (sessions || []).filter((s: SessionLog) => s.id !== id) });
-    setHandoffOpen(true);
-  }, [session, id]);
-
-  const copyHandoff = useCallback(() => {
-    if (!session || !handoff) return;
-    const text = buildHandoffText(session, events, handoff);
-    navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
-  }, [session, events, handoff]);
+  const handleCopy = useCallback(() => {
+    if (!session) return;
+    const text = buildHandoffText(session, events, touchedTasks);
+    navigator.clipboard.writeText(text).then(() => {
+      setCopyLabel('Copied!');
+      setTimeout(() => setCopyLabel('Copy Handoff'), 2000);
+    });
+  }, [session, events, touchedTasks]);
 
   if (loading) {
     return (
-      <div className="flex flex-col h-full min-h-0 bg-[var(--bg)]">
-        <StickyHeader title="Session" showBack />
-        <main style={{ maxWidth: 960, margin: "0 auto", padding: "24px 16px", color: "var(--text3)" }}>
-          Loading...
-        </main>
+      <div className="h-full overflow-y-auto">
+        <div className="max-w-[1280px] mx-auto px-8 py-7 flex items-center justify-center" style={{ height: 240 }}>
+          <div className="w-6 h-6 rounded-full border-2 border-[var(--primary)] border-t-transparent animate-spin" />
+        </div>
       </div>
     );
   }
 
   if (!session) {
     return (
-      <div className="flex flex-col h-full min-h-0 bg-[var(--bg)]">
-        <StickyHeader title="Session" showBack />
-        <main style={{ maxWidth: 960, margin: "0 auto", padding: "24px 16px" }}>
-          <p style={{ color: "var(--text3)" }}>Session not found.</p>
-        </main>
+      <div className="h-full overflow-y-auto">
+        <div className="max-w-[1280px] mx-auto px-8 py-7" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <Link href="/sessions" style={{ color: 'var(--primary-2)', fontSize: 'var(--t-sm)' }}>← Sessions</Link>
+          <div
+            style={{
+              textAlign: 'center',
+              padding: '48px 24px',
+              background: 'var(--card)',
+              border: '1px dashed var(--border)',
+              borderRadius: 'var(--r)',
+              color: 'var(--text3)',
+              fontSize: 'var(--t-sm)',
+            }}
+          >
+            Session not found.
+          </div>
+        </div>
       </div>
     );
   }
 
-  const eventColors: Record<string, string> = {
-    task_completed: "var(--green)",
-    task_started: "var(--accent)",
-    decision_made: "var(--purple)",
-    blocker_found: "var(--red)",
-    file_changed: "var(--text2)",
-  };
+  const surface = session.surface ? SURFACE_STYLE[session.surface] : null;
+  const totalTokens = (session.input_tokens || 0) + (session.output_tokens || 0);
+  const linkedHandoff = mountedHandoffs[0] ?? emittedHandoffs[0] ?? null;
 
   return (
-    <div className="flex flex-col h-full min-h-0 bg-[var(--bg)]">
-      <StickyHeader title={session.title || "Session"} showBack />
-      <main style={{ maxWidth: 960, margin: "0 auto", padding: "24px 16px", width: "100%" }}>
-        <div className="flex items-center gap-2 mb-1">
-          <Link href="/dashboard" className="text-[12px] text-[var(--text3)] no-underline">
-            Dashboard
-          </Link>
-          {session.project_key && (
-            <>
-              <span className="text-[var(--text3)]">/</span>
-              <Link
-                href={`/project/${session.project_key}`}
-                className="text-[12px] text-[var(--text3)] no-underline"
+    <div className="h-full overflow-y-auto" data-testid="session-detail-page">
+      <div className="max-w-[1280px] mx-auto px-8 py-7" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, minWidth: 0 }}>
+            <button
+              onClick={() => router.back()}
+              style={{
+                width: 32, height: 32,
+                borderRadius: 'var(--r-sm)',
+                background: 'var(--card)',
+                border: '1px solid var(--border)',
+                color: 'var(--text2)',
+                cursor: 'pointer',
+                fontSize: 16,
+                flexShrink: 0,
+              }}
+              title="Back"
+            >
+              ←
+            </button>
+            <div style={{ minWidth: 0 }}>
+              <Breadcrumb session={session} linkedHandoff={linkedHandoff} />
+              <h1
+                className="font-semibold tracking-tight"
+                style={{ fontSize: 'var(--t-h1)', marginTop: 6, color: 'var(--text)' }}
               >
-                {session.project_key}
-              </Link>
-            </>
-          )}
-        </div>
-
-        <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "16px 0 4px", flexWrap: "wrap" }}>
-          <h1 style={{ fontSize: 22, fontWeight: 700 }}>{session.title}</h1>
-          <SurfaceBadge surface={session.surface} />
-          <IdBadge value={session.session_code} label="session_code" kind="code" />
-          {session.project_key && <IdBadge value={session.project_key} label="project_key" kind="key" size="xs" />}
-        </div>
-        <div style={{ fontSize: 12, color: "var(--text2)", marginBottom: 8, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-          <span>{session.session_date}</span>
-          {session.project_key && <><span>&middot;</span><span style={{ color: "var(--accent)" }}>{session.project_key}</span></>}
-          {session.chain_id && <><span>&middot;</span><span style={{ color: "var(--purple)" }}>chain: {session.chain_id}</span></>}
-        </div>
-        <div style={{ display: "flex", gap: 4, marginBottom: 16, flexWrap: "wrap" }}>
-          {session.surface && <Tag bg="var(--accent-dim)" color="var(--accent)">{session.surface}</Tag>}
-          {session.entry_point && <Tag bg="var(--purple-dim)" color="var(--purple)">{session.entry_point}</Tag>}
-          {session.mission && <Tag bg="var(--green-dim)" color="var(--green)">{session.mission}</Tag>}
-          {session.chain_id && <Tag bg="var(--green-dim)" color="var(--green)">Chain</Tag>}
-        </div>
-
-        {/* Stat Bar */}
-        <div style={{ display: "flex", background: "var(--card)", borderRadius: "var(--r)", overflow: "hidden", marginBottom: 20, boxShadow: "0 2px 12px rgba(0,0,0,.1)" }}>
-          <StatCell label="Input" value={fmtTokens(session.input_tokens || 0)} color="var(--accent)" />
-          <StatCell label="Output" value={fmtTokens(session.output_tokens || 0)} />
-          <StatCell label="Cost" value={`$${(Number(session.cost_usd) || 0).toFixed(2)}`} color="var(--green)" />
-          <StatCell label="Tokens" value={fmtTokens((session.input_tokens || 0) + (session.output_tokens || 0))} color="var(--text2)" />
-        </div>
-
-        {session.summary && (
-          <section style={{ marginBottom: 32 }}>
-            <h2 style={{ fontSize: 14, fontWeight: 600, color: "var(--text2)", marginBottom: 8 }}>Summary</h2>
-            <p style={{ fontSize: 14, color: "var(--text)", lineHeight: 1.6, background: "var(--card)", padding: 16, borderRadius: "var(--r)" }}>
-              {session.summary}
-            </p>
-          </section>
-        )}
-
-        {/* Attribution: handoffs mounted + emitted, tasks touched (pain #5) */}
-        {(mountedHandoffs.length > 0 || emittedHandoffs.length > 0 || touchedTasks.length > 0) && (
-          <section style={{ marginBottom: 32 }}>
-            <h2 style={{ fontSize: 14, fontWeight: 600, color: "var(--text2)", marginBottom: 10 }}>Attribution</h2>
-            {mountedHandoffs.length > 0 && (
-              <AttrRow label="Mounted handoff(s)" accent="var(--accent)">
-                {mountedHandoffs.map((h) => (
-                  <span key={h.id} className="inline-flex items-center gap-1.5 mr-2 mb-1">
-                    <IdBadge value={h.handoff_code} label="handoff_code" kind="code" />
-                    <span className="text-[12px] text-[var(--text)]">{h.scope_name}</span>
-                    <span className="text-[10px] text-[var(--text3)]">({h.sections_completed}/{h.sections_total})</span>
+                {session.session_code || session.id.slice(0, 8)} — {session.title || 'Untitled'}
+              </h1>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+                {surface && (
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      letterSpacing: '.05em',
+                      padding: '2px 8px',
+                      borderRadius: 3,
+                      background: surface.bg,
+                      color: surface.fg,
+                    }}
+                  >
+                    {session.surface}
                   </span>
-                ))}
-              </AttrRow>
+                )}
+                <span style={{ fontSize: 'var(--t-tiny)', color: 'var(--text3)' }}>
+                  {session.session_date}
+                </span>
+                {session.entry_point && (
+                  <code style={{ fontFamily: 'ui-monospace', fontSize: 10, color: 'var(--primary-2)' }}>{session.entry_point}</code>
+                )}
+                {session.mission && (
+                  <Link href={`/mission/${encodeURIComponent(session.mission)}`} style={{ fontSize: 10, color: 'var(--success)', textDecoration: 'none' }}>
+                    {session.mission}
+                  </Link>
+                )}
+                {session.chain_id && (
+                  <Link href={`/chain/${encodeURIComponent(session.chain_id)}`} style={{ fontSize: 10, color: 'var(--purple)', textDecoration: 'none' }}>
+                    chain: {session.chain_id}
+                  </Link>
+                )}
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <GhostButton onClick={handleCopy}>{copyLabel}</GhostButton>
+            <GhostButton disabled>＋ Note</GhostButton>
+          </div>
+        </div>
+
+        {/* Two-col layout */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)',
+            gap: 16,
+            alignItems: 'start',
+          }}
+        >
+          {/* Main col */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {/* Session stats */}
+            <SectionCard>
+              <SectionHead title="Session stats" />
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 0, borderRadius: 'var(--r-sm)', overflow: 'hidden', border: '1px solid var(--border)' }}>
+                <StatCell label="Input" value={fmtTokens(session.input_tokens || 0)} color="var(--primary-2)" />
+                <StatCell label="Output" value={fmtTokens(session.output_tokens || 0)} />
+                <StatCell label="Cost" value={`$${(Number(session.cost_usd) || 0).toFixed(2)}`} color="var(--success)" />
+                <StatCell label="Tokens" value={fmtTokens(totalTokens)} />
+              </div>
+            </SectionCard>
+
+            {/* Summary */}
+            {session.summary && (
+              <SectionCard>
+                <SectionHead title="Summary" />
+                <p style={{ fontSize: 'var(--t-sm)', color: 'var(--text2)', lineHeight: 1.6, whiteSpace: 'pre-wrap', margin: 0 }}>
+                  {session.summary}
+                </p>
+              </SectionCard>
             )}
-            {emittedHandoffs.length > 0 && (
-              <AttrRow label="Emitted handoff(s)" accent="var(--green)">
-                {emittedHandoffs.map((h) => (
-                  <span key={h.id} className="inline-flex items-center gap-1.5 mr-2 mb-1">
-                    <IdBadge value={h.handoff_code} label="handoff_code" kind="code" />
-                    <span className="text-[12px] text-[var(--text)]">{h.scope_name}</span>
-                    <span className="text-[10px] px-1.5 py-[1px] rounded bg-[var(--card)] text-[var(--text3)]">{h.status}</span>
-                  </span>
-                ))}
-              </AttrRow>
-            )}
+
+            {/* Tasks touched */}
             {touchedTasks.length > 0 && (
-              <AttrRow label={`Tasks touched (${touchedTasks.length})`} accent="var(--purple)">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 mt-1">
+              <SectionCard>
+                <SectionHead title="Tasks touched" count={touchedTasks.length} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   {touchedTasks.map((t) => (
                     <Link
                       key={t.id}
-                      href={`/project/${t.project_key}`}
-                      className="flex items-center gap-2 px-2.5 py-1.5 rounded-[6px] bg-[var(--card)] hover:bg-[var(--card2,var(--card))] border border-[var(--border)] no-underline"
+                      href={t.mission ? `/mission/${encodeURIComponent(t.mission)}` : `/project/${encodeURIComponent(t.project_key)}`}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        padding: '8px 10px',
+                        background: 'var(--bg)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 'var(--r-sm)',
+                        textDecoration: 'none',
+                        color: 'inherit',
+                      }}
                     >
-                      {t.priority && (
-                        <span className="w-[6px] h-[6px] rounded-full shrink-0"
-                              style={{ background: t.priority === 'P0' ? 'var(--red)' : t.priority === 'P1' ? 'var(--orange)' : 'var(--yellow)' }} />
+                      <span
+                        style={{
+                          width: 14, height: 14,
+                          borderRadius: 3,
+                          border: '1px solid var(--border)',
+                          background: t.completed ? 'var(--success)' : 'transparent',
+                          color: '#fff',
+                          fontSize: 9,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                        }}
+                      >
+                        {t.completed ? '✓' : ''}
+                      </span>
+                      {t.task_code && (
+                        <span style={{ fontFamily: 'ui-monospace', fontSize: 10, color: 'var(--text4)' }}>{t.task_code}</span>
                       )}
-                      <IdBadge value={t.task_code} label="task_code" kind="code" size="xs" />
-                      <span className={`text-[12px] flex-1 min-w-0 truncate ${t.completed ? 'line-through text-[var(--text3)]' : 'text-[var(--text2)]'}`}>
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 'var(--t-sm)', color: t.completed ? 'var(--text3)' : 'var(--text)', textDecoration: t.completed ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {t.text}
                       </span>
-                      {t.mission && <span className="text-[9px] text-[var(--green)] shrink-0">{t.mission}</span>}
+                      {t.mission && (
+                        <span style={{ fontSize: 10, color: 'var(--success)' }}>{t.mission}</span>
+                      )}
+                      {t.priority && (
+                        <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--text3)' }}>{t.priority}</span>
+                      )}
                     </Link>
                   ))}
                 </div>
-              </AttrRow>
+              </SectionCard>
             )}
-          </section>
-        )}
 
-        {events.length > 0 && (
-          <section>
-            <h2 style={{ fontSize: 14, fontWeight: 600, color: "var(--text2)", marginBottom: 12 }}>
-              Events ({events.length})
-            </h2>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {events.map((e) => (
-                <div
-                  key={e.id}
-                  style={{
-                    display: "flex", alignItems: "flex-start", gap: 10,
-                    padding: "10px 14px", background: "var(--card)", borderRadius: "var(--r-sm)",
-                  }}
-                >
-                  <span
-                    style={{
-                      width: 8, height: 8, borderRadius: "50%", marginTop: 5, flexShrink: 0,
-                      background: eventColors[e.event_type] || "var(--text3)",
-                    }}
-                  />
-                  <div>
-                    <span style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", color: eventColors[e.event_type] || "var(--text3)" }}>
-                      {e.event_type.replace("_", " ")}
-                    </span>
-                    {e.detail && (
-                      <p style={{ fontSize: 13, color: "var(--text)", margin: "4px 0 0" }}>{e.detail}</p>
-                    )}
-                    <span style={{ fontSize: 11, color: "var(--text3)" }}>
-                      {new Date(e.created_at).toLocaleTimeString()}
-                    </span>
-                  </div>
+            {/* Events */}
+            {events.length > 0 && (
+              <SectionCard>
+                <SectionHead title="Events" count={events.length} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {events.map((e) => {
+                    const color = eventColors[e.event_type] || 'var(--text3)';
+                    return (
+                      <div
+                        key={e.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          gap: 10,
+                          padding: '8px 10px',
+                          background: 'var(--bg)',
+                          border: '1px solid var(--border)',
+                          borderRadius: 'var(--r-sm)',
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: 6, height: 6,
+                            borderRadius: '50%',
+                            background: color,
+                            marginTop: 5,
+                            flexShrink: 0,
+                          }}
+                        />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <span
+                            style={{
+                              fontSize: 9,
+                              fontWeight: 700,
+                              textTransform: 'uppercase',
+                              letterSpacing: '.05em',
+                              color,
+                            }}
+                          >
+                            {e.event_type.replace(/_/g, ' ')}
+                          </span>
+                          {e.detail && (
+                            <p style={{ fontSize: 'var(--t-sm)', color: 'var(--text)', margin: '2px 0 0', lineHeight: 1.5 }}>
+                              {e.detail}
+                            </p>
+                          )}
+                          <span style={{ fontSize: 'var(--t-tiny)', color: 'var(--text3)' }}>
+                            {new Date(e.created_at).toLocaleTimeString()}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              ))}
-            </div>
-          </section>
-        )}
+              </SectionCard>
+            )}
 
-        {events.length === 0 && (
-          <p style={{ color: "var(--text3)", fontSize: 13 }}>
-            No events logged for this session yet. Events are recorded as tasks complete during a session.
-          </p>
-        )}
-
-        {/* ── Handoff Section ── */}
-        <section style={{ marginTop: 32, borderTop: "1px solid var(--border)", paddingTop: 24 }}>
-          {!handoffOpen ? (
-            <button
-              onClick={loadHandoff}
-              style={{
-                width: "100%", padding: "12px 16px", background: "var(--card)",
-                border: "1px solid var(--border)", borderRadius: "var(--r)",
-                color: "var(--accent)", fontSize: 14, fontWeight: 600, cursor: "pointer",
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-              }}
-            >
-              <span style={{ fontSize: 16 }}>&#x21AA;</span>
-              Generate Handoff
-            </button>
-          ) : (
-            <div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                <h2 style={{ fontSize: 14, fontWeight: 600, color: "var(--text2)" }}>Handoff</h2>
-                <button
-                  onClick={copyHandoff}
-                  style={{
-                    padding: "6px 14px", background: copied ? "var(--green-dim)" : "var(--accent-dim)",
-                    color: copied ? "var(--green)" : "var(--accent)",
-                    border: "none", borderRadius: "var(--r-sm)", fontSize: 12, fontWeight: 600, cursor: "pointer",
-                  }}
-                >
-                  {copied ? "Copied!" : "Copy to CC"}
-                </button>
-              </div>
-              {handoff ? (
+            {/* Handoff context (copy preview) */}
+            {(session.summary || events.length > 0) && (
+              <SectionCard>
+                <SectionHead title="Handoff context (as captured on EOS)" />
                 <pre
                   style={{
-                    fontSize: 12, lineHeight: 1.6, color: "var(--text)",
-                    background: "var(--card)", padding: 16, borderRadius: "var(--r)",
-                    whiteSpace: "pre-wrap", wordBreak: "break-word", overflow: "auto",
-                    maxHeight: 480, border: "1px solid var(--border)",
+                    fontSize: 11,
+                    lineHeight: 1.55,
+                    color: 'var(--text2)',
+                    background: 'var(--bg)',
+                    padding: 12,
+                    borderRadius: 'var(--r-sm)',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    overflow: 'auto',
+                    maxHeight: 420,
+                    border: '1px solid var(--border)',
                     fontFamily: "'SF Mono', SFMono-Regular, Menlo, monospace",
+                    margin: 0,
                   }}
                 >
-                  {buildHandoffText(session, events, handoff)}
+                  {buildHandoffText(session, events, touchedTasks)}
                 </pre>
-              ) : (
-                <p style={{ color: "var(--text3)", fontSize: 13 }}>Loading handoff data...</p>
-              )}
-            </div>
-          )}
-        </section>
-      </main>
+              </SectionCard>
+            )}
+          </div>
+
+          {/* Rail col */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {/* Linked handoff */}
+            {linkedHandoff && (
+              <SectionCard>
+                <SectionHead title="Linked handoff" />
+                <Link
+                  href={`/handoff/${encodeURIComponent(linkedHandoff.id)}`}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 6,
+                    padding: '10px 12px',
+                    background: 'var(--bg)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--r-sm)',
+                    textDecoration: 'none',
+                    color: 'inherit',
+                  }}
+                >
+                  <div style={{ fontSize: 'var(--t-sm)', color: 'var(--text)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {linkedHandoff.scope_name}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <PurposeChip purpose={linkedHandoff.purpose ?? purposeFromEntry(linkedHandoff.entry_point)} />
+                    <StatusBadge status={linkedHandoff.status} />
+                    <span style={{ fontSize: 'var(--t-tiny)', color: 'var(--text3)' }}>
+                      {linkedHandoff.sections_completed}/{linkedHandoff.sections_total}
+                    </span>
+                  </div>
+                </Link>
+                {emittedHandoffs.length > 0 && mountedHandoffs.length > 0 && emittedHandoffs[0].id !== mountedHandoffs[0].id && (
+                  <div style={{ marginTop: 6, fontSize: 'var(--t-tiny)', color: 'var(--text3)' }}>
+                    Also emitted: <Link href={`/handoff/${encodeURIComponent(emittedHandoffs[0].id)}`} style={{ color: 'var(--primary-2)' }}>{emittedHandoffs[0].scope_name}</Link>
+                  </div>
+                )}
+              </SectionCard>
+            )}
+
+            {/* Details */}
+            <SectionCard>
+              <SectionHead title="Details" />
+              <KvList>
+                {session.project_key && (
+                  <KvRow k="Project" v={
+                    <Link href={`/project/${encodeURIComponent(session.project_key)}`} style={{ fontFamily: 'ui-monospace', fontSize: 11, color: 'var(--primary-2)', textDecoration: 'none' }}>
+                      {session.project_key}
+                    </Link>
+                  } />
+                )}
+                {session.surface && (
+                  <KvRow k="Surface" v={<code style={{ fontFamily: 'ui-monospace', fontSize: 11 }}>{session.surface}</code>} />
+                )}
+                {session.entry_point && (
+                  <KvRow k="Entry" v={<code style={{ fontFamily: 'ui-monospace', fontSize: 11 }}>{session.entry_point}</code>} />
+                )}
+                {session.mission && (
+                  <KvRow k="Mission" v={
+                    <Link href={`/mission/${encodeURIComponent(session.mission)}`} style={{ color: 'var(--success)', fontSize: 11, textDecoration: 'none' }}>
+                      {session.mission}
+                    </Link>
+                  } />
+                )}
+                {session.chain_id && (
+                  <KvRow k="Chain" v={
+                    <Link href={`/chain/${encodeURIComponent(session.chain_id)}`} style={{ color: 'var(--purple)', fontSize: 11, textDecoration: 'none' }}>
+                      {session.chain_id}
+                    </Link>
+                  } />
+                )}
+                <KvRow k="Date" v={session.session_date} />
+                {session.session_code && (
+                  <KvRow k="Code" v={<code style={{ fontFamily: 'ui-monospace', fontSize: 11 }}>{session.session_code}</code>} />
+                )}
+              </KvList>
+            </SectionCard>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
 
-/* ── Helpers ── */
+const eventColors: Record<string, string> = {
+  task_completed: 'var(--success)',
+  task_started: 'var(--primary-2)',
+  decision_made: 'var(--purple)',
+  blocker_found: 'var(--danger)',
+  file_changed: 'var(--text2)',
+  decision: 'var(--purple)',
+};
 
-function fmtTokens(n: number): string {
-  return n >= 1000 ? `${(n / 1000).toFixed(0)}K` : String(n);
+function Breadcrumb({ session, linkedHandoff }: { session: SessionDetail; linkedHandoff: Handoff | null }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-tiny)', color: 'var(--text3)', flexWrap: 'wrap' }}>
+      <Link href="/sessions" style={{ color: 'var(--text3)', textDecoration: 'none' }}>Sessions</Link>
+      {session.project_key && (
+        <>
+          <span style={{ color: 'var(--text4)' }}>›</span>
+          <Link
+            href={`/entity/${encodeURIComponent(session.project_key)}`}
+            style={{ fontFamily: 'ui-monospace', color: 'var(--text3)', textDecoration: 'none' }}
+          >
+            {session.project_key}
+          </Link>
+        </>
+      )}
+      {linkedHandoff && (
+        <>
+          <span style={{ color: 'var(--text4)' }}>›</span>
+          <Link
+            href={`/handoff/${encodeURIComponent(linkedHandoff.id)}`}
+            style={{ fontFamily: 'ui-monospace', color: 'var(--primary-2)', textDecoration: 'none' }}
+          >
+            {linkedHandoff.handoff_code || linkedHandoff.id.slice(0, 8)}
+          </Link>
+        </>
+      )}
+      <span style={{ color: 'var(--text4)' }}>·</span>
+      <span style={{ fontFamily: 'ui-monospace', color: 'var(--primary-2)', fontWeight: 600 }}>
+        {session.session_code || session.id.slice(0, 8)}
+      </span>
+    </div>
+  );
 }
 
 function StatCell({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
-    <div style={{ flex: 1, textAlign: "center", padding: "14px 8px", borderRight: "1px solid var(--border)" }}>
-      <div style={{ fontSize: 17, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: color || "var(--text)" }}>{value}</div>
-      <div style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", color: "var(--text3)", letterSpacing: "0.03em", marginTop: 2 }}>{label}</div>
+    <div style={{ padding: '12px 8px', textAlign: 'center', background: 'var(--bg)', borderRight: '1px solid var(--border)' }}>
+      <div style={{ fontSize: 17, fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: color || 'var(--text)' }}>{value}</div>
+      <div style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', color: 'var(--text3)', letterSpacing: '.04em', marginTop: 2 }}>{label}</div>
     </div>
   );
 }
 
-function Tag({ bg, color, children }: { bg: string; color: string; children: React.ReactNode }) {
+function SectionCard({ children }: { children: React.ReactNode }) {
   return (
-    <span style={{ fontSize: 9, fontWeight: 600, padding: "2px 6px", borderRadius: 4, background: bg, color }}>{children}</span>
+    <div
+      style={{
+        background: 'var(--card)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--r-lg)',
+        padding: 16,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+      }}
+    >
+      {children}
+    </div>
   );
 }
 
-function AttrRow({ label, accent, children }: { label: string; accent: string; children: React.ReactNode }) {
+function SectionHead({ title, count }: { title: string; count?: number }) {
   return (
-    <div style={{ marginBottom: 10, paddingLeft: 10, borderLeft: `2px solid ${accent}` }}>
-      <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: accent, marginBottom: 4 }}>
-        {label}
-      </div>
-      <div style={{ fontSize: 13, color: "var(--text)" }}>{children}</div>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <div style={{ fontSize: 'var(--t-sm)', fontWeight: 600, color: 'var(--text)' }}>{title}</div>
+      {count !== undefined && (
+        <span
+          style={{
+            fontSize: 'var(--t-tiny)',
+            color: 'var(--text3)',
+            fontVariantNumeric: 'tabular-nums',
+            padding: '1px 6px',
+            background: 'var(--card-alt)',
+            borderRadius: 999,
+          }}
+        >
+          {count}
+        </span>
+      )}
     </div>
+  );
+}
+
+function KvList({ children }: { children: React.ReactNode }) {
+  return <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>{children}</div>;
+}
+
+function KvRow({ k, v }: { k: string; v: React.ReactNode }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: 'var(--t-sm)' }}>
+      <span style={{ color: 'var(--text3)' }}>{k}</span>
+      <span style={{ color: 'var(--text)', fontVariantNumeric: 'tabular-nums', fontWeight: 500, textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{v}</span>
+    </div>
+  );
+}
+
+function GhostButton({ children, onClick, disabled }: { children: React.ReactNode; onClick?: () => void; disabled?: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        padding: '8px 12px',
+        background: 'var(--card)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--r-sm)',
+        fontSize: 'var(--t-sm)',
+        color: 'var(--text2)',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.5 : 1,
+      }}
+      title={disabled ? 'Coming in a later phase' : undefined}
+    >
+      {children}
+    </button>
   );
 }
