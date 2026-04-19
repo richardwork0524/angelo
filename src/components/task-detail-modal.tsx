@@ -65,6 +65,7 @@ export function TaskDetailModal({ task, subtasks = [], onClose, onUpdate, onDele
   const [splitCount, setSplitCount] = useState("3");
   const [addingSubtask, setAddingSubtask] = useState(false);
   const [subtaskText, setSubtaskText] = useState("");
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [saving, setSaving] = useState(false);
   const [localTask, setLocalTask] = useState(task);
 
@@ -332,12 +333,30 @@ export function TaskDetailModal({ task, subtasks = [], onClose, onUpdate, onDele
         {/* Footer */}
         <div className="shrink-0 px-4 py-2 border-t border-[var(--border)] flex items-center justify-end">
           {onDelete && (
-            <button
-              onClick={async () => { if (confirm("Delete this task?")) { await onDelete(localTask.id); onClose(); } }}
-              className="text-[10px] text-[#ff453a] hover:underline"
-            >
-              Delete task
-            </button>
+            confirmingDelete ? (
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-[var(--text2)]">Sure?</span>
+                <button
+                  onClick={async () => { await onDelete(localTask.id); onClose(); }}
+                  className="text-[10px] text-[#ff453a] font-semibold hover:underline"
+                >
+                  Yes, delete
+                </button>
+                <button
+                  onClick={() => setConfirmingDelete(false)}
+                  className="text-[10px] text-[var(--text3)] hover:underline"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setConfirmingDelete(true)}
+                className="text-[10px] text-[#ff453a] hover:underline"
+              >
+                Delete task
+              </button>
+            )
           )}
         </div>
       </div>

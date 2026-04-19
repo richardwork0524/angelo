@@ -46,6 +46,7 @@ export function NoteModal() {
   const [sessionLogId, setSessionLogId] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
 
@@ -189,7 +190,6 @@ export function NoteModal() {
 
   async function onDelete() {
     if (state.mode !== 'edit') return;
-    if (!confirm('Delete this note?')) return;
     setSubmitting(true);
     try {
       const res = await fetch(`/api/notes/${state.note.id}`, { method: 'DELETE' });
@@ -440,22 +440,60 @@ export function NoteModal() {
         >
           {isEdit && (
             <>
-              <button
-                onClick={onDelete}
-                disabled={submitting}
-                style={{
-                  padding: '8px 12px',
-                  background: 'transparent',
-                  border: '1px solid var(--danger)',
-                  color: 'var(--danger)',
-                  borderRadius: 'var(--r-sm)',
-                  fontSize: 'var(--t-sm)',
-                  cursor: submitting ? 'not-allowed' : 'pointer',
-                  opacity: submitting ? 0.6 : 1,
-                }}
-              >
-                Delete
-              </button>
+              {confirmingDelete ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 'var(--t-sm)', color: 'var(--text2)' }}>Delete note?</span>
+                  <button
+                    onClick={onDelete}
+                    disabled={submitting}
+                    style={{
+                      padding: '8px 12px',
+                      background: 'transparent',
+                      border: '1px solid var(--danger)',
+                      color: 'var(--danger)',
+                      borderRadius: 'var(--r-sm)',
+                      fontSize: 'var(--t-sm)',
+                      fontWeight: 600,
+                      cursor: submitting ? 'not-allowed' : 'pointer',
+                      opacity: submitting ? 0.6 : 1,
+                    }}
+                  >
+                    Yes
+                  </button>
+                  <button
+                    onClick={() => setConfirmingDelete(false)}
+                    disabled={submitting}
+                    style={{
+                      padding: '8px 12px',
+                      background: 'transparent',
+                      border: '1px solid var(--border)',
+                      color: 'var(--text3)',
+                      borderRadius: 'var(--r-sm)',
+                      fontSize: 'var(--t-sm)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setConfirmingDelete(true)}
+                  disabled={submitting}
+                  style={{
+                    padding: '8px 12px',
+                    background: 'transparent',
+                    border: '1px solid var(--danger)',
+                    color: 'var(--danger)',
+                    borderRadius: 'var(--r-sm)',
+                    fontSize: 'var(--t-sm)',
+                    cursor: submitting ? 'not-allowed' : 'pointer',
+                    opacity: submitting ? 0.6 : 1,
+                  }}
+                >
+                  Delete
+                </button>
+              )}
               <button
                 onClick={onToggleResolve}
                 disabled={submitting}
