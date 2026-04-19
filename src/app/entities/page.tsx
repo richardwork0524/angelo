@@ -61,7 +61,7 @@ export default function EntitiesPage() {
 
   return (
     <div className="h-full overflow-y-auto" data-testid="entities-page">
-      <div className="max-w-[1280px] mx-auto px-8 py-7" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div className="max-w-[1280px] mx-auto px-4 md:px-8 py-5 md:py-7" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         {/* Page head */}
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <h1 className="font-semibold tracking-tight" style={{ fontSize: 'var(--t-h2)' }}>
@@ -148,7 +148,7 @@ export default function EntitiesPage() {
         )}
 
         {/* Stats strip */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12 }}>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
           <StatCell k="Companies" v={String(byType.company ?? 0)} />
           <StatCell k="Apps" v={String(byType.app ?? 0)} tone="primary" />
           <StatCell k="Games" v={String(byType.game ?? 0)} tone="warn" />

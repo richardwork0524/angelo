@@ -49,7 +49,7 @@ interface SidebarCounts {
   tasks?: number;
 }
 
-export function Sidebar() {
+export function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
   const pathname = usePathname();
   const [counts, setCounts] = useState<SidebarCounts>({});
 
@@ -121,6 +121,7 @@ export function Sidebar() {
               <Link
                 key={item.key}
                 href={item.href}
+                onClick={onNavigate}
                 className="flex items-center gap-3 transition-colors"
                 style={{
                   padding: '9px 10px',

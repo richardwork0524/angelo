@@ -130,7 +130,7 @@ export default function HomePage() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="max-w-[1280px] mx-auto px-8 py-7">
+      <div className="max-w-[1280px] mx-auto px-4 md:px-8 py-5 md:py-7">
         {/* Page head */}
         <div className="flex items-end justify-between mb-6 gap-4 flex-wrap">
           <div>
@@ -183,7 +183,7 @@ export default function HomePage() {
         )}
 
         {/* Sub-grid: Recent Handoffs + Today's Pulse */}
-        <div className="grid gap-6 mt-6" style={{ gridTemplateColumns: 'minmax(0, 1.5fr) minmax(280px, 1fr)' }}>
+        <div className="grid gap-6 mt-6 grid-cols-1 md:[grid-template-columns:minmax(0,1.5fr)_minmax(280px,1fr)]">
           {/* Recent Handoffs */}
           <section>
             <div className="flex items-center justify-between mb-3">
@@ -271,16 +271,11 @@ function MountedHero({
 
   return (
     <div
-      className="relative overflow-hidden"
+      className="relative overflow-hidden grid grid-cols-1 md:grid-cols-[1fr_auto] items-stretch md:items-center gap-4 md:gap-6 p-5 md:p-7"
       style={{
         background: 'linear-gradient(135deg, rgba(99,102,241,.10) 0%, rgba(99,102,241,.02) 60%), var(--card)',
         border: '1px solid var(--primary-hi)',
         borderRadius: 'var(--r-lg)',
-        padding: '24px 28px',
-        display: 'grid',
-        gridTemplateColumns: '1fr auto',
-        gap: 24,
-        alignItems: 'center',
         boxShadow: 'var(--sh)',
       }}
     >
@@ -418,7 +413,7 @@ function MountedHero({
         </div>
       </div>
 
-      <div className="flex flex-col gap-2" style={{ minWidth: 180 }}>
+      <div className="flex flex-col gap-2 md:min-w-[180px]">
         <button
           onClick={onOpenDetail}
           className="transition-opacity hover:opacity-90"
@@ -479,18 +474,14 @@ function MountedHero({
 function EmptyHero({ onBrowse }: { onBrowse: () => void }) {
   return (
     <div
+      className="grid grid-cols-1 md:grid-cols-[1fr_auto] items-stretch md:items-center gap-4 md:gap-6 p-6 md:p-8"
       style={{
         background: 'var(--card)',
         border: '1px solid var(--border)',
         borderRadius: 'var(--r-lg)',
-        padding: '32px 28px',
-        display: 'grid',
-        gridTemplateColumns: '1fr auto',
-        gap: 24,
-        alignItems: 'center',
       }}
     >
-      <div>
+      <div style={{ minWidth: 0 }}>
         <div
           style={{
             fontSize: 'var(--t-tiny)',
@@ -510,7 +501,7 @@ function EmptyHero({ onBrowse }: { onBrowse: () => void }) {
           Mount a handoff to make it the active context. It appears here and in the top bar until you unmount.
         </p>
       </div>
-      <div className="flex flex-col gap-2" style={{ minWidth: 180 }}>
+      <div className="flex flex-col gap-2 md:min-w-[180px]">
         <button
           onClick={onBrowse}
           className="transition-opacity hover:opacity-90"

@@ -413,9 +413,10 @@ function TasksPageInner() {
               border: '1px solid var(--border)',
               borderRadius: 'var(--r)',
               display: 'flex',
-              flexWrap: 'wrap',
+              flexDirection: isDesktop ? 'row' : 'column',
+              flexWrap: isDesktop ? 'wrap' : 'nowrap',
               gap: 8,
-              alignItems: 'center',
+              alignItems: isDesktop ? 'center' : 'stretch',
             }}
           >
             <select

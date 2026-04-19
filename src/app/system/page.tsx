@@ -122,7 +122,7 @@ export default function SystemPage() {
 
   return (
     <div className="h-full overflow-y-auto" data-testid="system-page">
-      <div className="max-w-[1280px] mx-auto px-8 py-7" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div className="max-w-[1280px] mx-auto px-4 md:px-8 py-5 md:py-7" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <h1 className="font-semibold tracking-tight" style={{ fontSize: 'var(--t-h2)' }}>
             System

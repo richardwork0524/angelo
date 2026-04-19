@@ -111,7 +111,7 @@ export default function ModuleDetailPage({ params }: { params: Promise<{ id: str
   if (loading) {
     return (
       <div className="h-full overflow-y-auto">
-        <div className="max-w-[1280px] mx-auto px-8 py-7 flex items-center justify-center" style={{ height: 240 }}>
+        <div className="max-w-[1280px] mx-auto px-4 md:px-8 py-5 md:py-7 flex items-center justify-center" style={{ height: 240 }}>
           <div className="w-6 h-6 rounded-full border-2 border-[var(--primary)] border-t-transparent animate-spin" />
         </div>
       </div>
@@ -121,7 +121,7 @@ export default function ModuleDetailPage({ params }: { params: Promise<{ id: str
   if (notFound || !mod) {
     return (
       <div className="h-full overflow-y-auto">
-        <div className="max-w-[1280px] mx-auto px-8 py-7" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div className="max-w-[1280px] mx-auto px-4 md:px-8 py-5 md:py-7" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <Link href="/entities" style={{ color: 'var(--primary-2)', fontSize: 'var(--t-sm)' }}>← Entities</Link>
           <div
             style={{
@@ -143,7 +143,7 @@ export default function ModuleDetailPage({ params }: { params: Promise<{ id: str
 
   return (
     <div className="h-full overflow-y-auto" data-testid="module-detail-page">
-      <div className="max-w-[1280px] mx-auto px-8 py-7" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div className="max-w-[1280px] mx-auto px-4 md:px-8 py-5 md:py-7" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         {/* Header */}
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, minWidth: 0 }}>

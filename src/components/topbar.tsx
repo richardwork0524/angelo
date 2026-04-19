@@ -16,7 +16,7 @@ interface TokenSummary {
   today_tokens: number;
 }
 
-export function Topbar() {
+export function Topbar({ onToggleNav, navOpen = false }: { onToggleNav?: () => void; navOpen?: boolean } = {}) {
   const [mounted, setMounted] = useState<MountedHandoff | null>(null);
   const [tokens, setTokens] = useState<TokenSummary | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
@@ -93,13 +93,34 @@ export function Topbar() {
 
   return (
     <header
-      className="flex items-center gap-3 px-5 shrink-0"
+      className="flex items-center gap-2 md:gap-3 px-3 md:px-5 shrink-0"
       style={{
         height: 56,
         background: 'var(--surface)',
         borderBottom: '1px solid var(--border)',
       }}
     >
+      {/* Hamburger — mobile only */}
+      {onToggleNav && (
+        <button
+          onClick={onToggleNav}
+          aria-label={navOpen ? 'Close navigation' : 'Open navigation'}
+          className="md:hidden flex items-center justify-center transition-colors"
+          style={{
+            width: 34,
+            height: 34,
+            borderRadius: 'var(--r-sm)',
+            background: navOpen ? 'var(--primary-dim)' : 'var(--card)',
+            border: '1px solid var(--border)',
+            color: navOpen ? 'var(--primary-2)' : 'var(--text2)',
+            fontSize: 16,
+            lineHeight: 1,
+          }}
+        >
+          {navOpen ? '✕' : '☰'}
+        </button>
+      )}
+
       {/* Brand */}
       <Link href="/" className="flex items-center gap-2.5 font-semibold tracking-tight" style={{ fontSize: 'var(--t-h3)' }}>
         <span
@@ -121,8 +142,8 @@ export function Topbar() {
 
       <div className="flex-1" />
 
-      {/* Mount pill */}
-      <div className="relative" ref={mountedPopupRef}>
+      {/* Mount pill — desktop only (saves horizontal space on mobile) */}
+      <div className="relative hidden md:block" ref={mountedPopupRef}>
         <button
           onClick={() => setMountedOpen((v) => !v)}
           className="flex items-center gap-2.5 transition-colors"
@@ -209,9 +230,9 @@ export function Topbar() {
         )}
       </div>
 
-      {/* Token pill */}
+      {/* Token pill — desktop only */}
       <div
-        className="flex items-center gap-2"
+        className="hidden md:flex items-center gap-2"
         style={{
           padding: '6px 12px',
           background: 'var(--card)',
