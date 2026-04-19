@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { cachedFetch, invalidateCache } from '@/lib/cache';
@@ -112,6 +112,22 @@ function toDetailTask(t: TasksApiTask): DetailTask {
 }
 
 export default function TasksPage() {
+  return (
+    <Suspense fallback={<TasksPageFallback />}>
+      <TasksPageInner />
+    </Suspense>
+  );
+}
+
+function TasksPageFallback() {
+  return (
+    <div className="h-full flex items-center justify-center">
+      <div className="w-6 h-6 rounded-full border-2 border-[var(--primary)] border-t-transparent animate-spin" />
+    </div>
+  );
+}
+
+function TasksPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const isDesktop = useBreakpoint(768);
