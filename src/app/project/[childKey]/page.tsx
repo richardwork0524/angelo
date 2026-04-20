@@ -11,6 +11,8 @@ import { EmptyState } from "@/components/empty-state";
 import { useToast } from "@/components/toast";
 import { ProjectCard } from "@/components/project-card";
 import { ProjectModules } from "@/components/modules/project-modules";
+import { ProjectStatsStrip } from "@/components/project-stats-strip";
+import { SpecChainVisual } from "@/components/spec-chain-visual";
 import { SessionLogList } from "@/components/session-log-list";
 import { type DetailTask } from "@/components/task/task-detail";
 import { Fab } from "@/components/fab";
@@ -111,8 +113,9 @@ interface ProjectDetail {
   session_logs: SessionLog[];
   modules: ModuleData[];
   deployments: DeploymentRow[];
-  sessions_7d_count: number;
-  cost_7d_usd: number;
+  sessions_7d?: number;
+  tokens_7d?: number;
+  cost_7d?: number;
 }
 
 interface NoteItem {
@@ -394,6 +397,15 @@ export default function ProjectDetailPage() {
   const totalDone = project ? project.tasks.completed.length : 0;
   const totalAll = totalOpen + totalDone;
 
+  // P0 tasks (blockers) across all open buckets
+  const p0Count = project
+    ? [
+        ...project.tasks.this_week,
+        ...project.tasks.this_month,
+        ...project.tasks.parked,
+      ].filter((t) => t.priority === 'P0').length
+    : 0;
+
   return (
     <div className="flex flex-col h-full min-h-0 bg-[var(--bg)]">
       <StickyHeader title={project?.display_name || "Loading..."} showBack />
@@ -431,16 +443,52 @@ export default function ProjectDetailPage() {
           <>
             {/* HERO — project state block */}
             <div className="px-4 pt-3">
-              <TierLabel>HERO · STATE</TierLabel>
-              <ProjectHeroCard project={project} totalOpen={totalOpen} />
+              <ProjectCard
+                project={{
+                  child_key: project.child_key,
+                  display_name: project.display_name,
+                  status: project.status || undefined,
+                  build_phase: project.build_phase || undefined,
+                  current_version: project.current_version,
+                  brief: project.brief,
+                  next_action: project.next_action,
+                  last_session_date: project.last_session_date,
+                  surface: project.surface,
+                  is_leaf: true,
+                  task_counts: {
+                    this_week: project.tasks.this_week.length,
+                    this_month: project.tasks.this_month.length,
+                    parked: project.tasks.parked.length,
+                  },
+                  children_task_total: 0,
+                  descendant_task_total: 0,
+                  completed_count: totalDone,
+                }}
+                variant="detailed"
+              />
+              {/* Stats strip — 4-cell bar extending the hero card */}
+              <ProjectStatsStrip
+                openTasks={totalOpen}
+                blockers={p0Count}
+                sessions7d={project.sessions_7d ?? 0}
+                tokens7d={project.tokens_7d ?? 0}
+                cost7d={project.cost_7d}
+              />
             </div>
 
-            {/* SUB — project modules */}
-            {(project.modules?.length > 0 || project.deployments?.length > 0) && (
+            {/* Spec chain visual — shown when build_phase is set */}
+            {project.build_phase && (
               <div className="px-4 pt-3">
-                <TierLabel>SUB · PROJECT MODULES</TierLabel>
+                <p className="text-[10px] font-bold uppercase tracking-[0.07em] text-[var(--text3)] mb-3">
+                  Spec Chain
+                </p>
+                <div className="bg-[var(--card)] border border-[var(--border)] rounded-[var(--r)] px-4 py-3 overflow-x-auto">
+                  <SpecChainVisual buildPhase={project.build_phase} />
+                </div>
               </div>
             )}
+
+            {/* Project modules (context-specific sections) */}
             {(project.modules?.length > 0 || project.deployments?.length > 0) && (
               <ProjectModules modules={project.modules || []} deployments={project.deployments || []} />
             )}
