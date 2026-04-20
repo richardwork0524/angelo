@@ -8,6 +8,7 @@ import { bgMutate } from '@/lib/mutate';
 import { useBreakpoint } from '@/hooks/useBreakpoint';
 import { TaskList } from '@/components/task/task-list';
 import { HeroCard, TierLabel } from '@/components/hero-card';
+import { TaskKanban } from '@/components/task/task-kanban';
 import type { TaskItem } from '@/components/task/task-row';
 import type { DetailTask } from '@/components/task/task-detail';
 
@@ -288,6 +289,49 @@ function TasksPageInner() {
     bgMutate({
       request: () => fetch(`/api/tasks/${taskId}`, { method: 'DELETE' }),
       ...syncOpts('Task deleted'),
+    });
+  }
+
+  function handleBucketChange(taskId: string, newBucket: string) {
+    optimisticUpdate(taskId, { bucket: newBucket, completed: false });
+    bgMutate({
+      request: () =>
+        fetch(`/api/tasks/${taskId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bucket: newBucket }),
+        }),
+      ...syncOpts('Moved'),
+    });
+  }
+
+  function handleReorder(taskId: string, newSortOrder: number) {
+    optimisticUpdate(taskId, { sort_order: newSortOrder });
+    bgMutate({
+      request: () =>
+        fetch(`/api/tasks/${taskId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sort_order: newSortOrder }),
+        }),
+      ...syncOpts('Reordered'),
+    });
+  }
+
+  function handleCompleteFromKanban(taskId: string, completed: boolean) {
+    if (!showCompleted && completed) {
+      optimisticRemove(taskId);
+    } else {
+      optimisticUpdate(taskId, { completed });
+    }
+    bgMutate({
+      request: () =>
+        fetch(`/api/tasks/${taskId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: completed ? 'completed' : 'open' }),
+        }),
+      ...syncOpts(completed ? 'Task completed' : 'Task reopened'),
     });
   }
 
@@ -587,64 +631,13 @@ function TasksPageInner() {
           </button>
         </form>
 
-        {/* HERO — top of queue */}
-        {!loading && heroTask && (
-          <div>
-            <TierLabel>HERO · TOP OF QUEUE</TierLabel>
-            <HeroCard accentHex={heroAccent}>
-              <div className="flex items-center gap-2 mb-2 flex-wrap">
-                {/* Priority chip */}
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px 3px 5px', borderRadius: 6, background: 'var(--card)', border: '1px solid var(--border)', fontSize: 11, fontWeight: 700, color: heroAccent }}>
-                  <span style={{ width: 4, height: 14, borderRadius: 2, background: heroAccent, display: 'inline-block' }} />
-                  {heroTask.priority || 'P2'}
-                </span>
-                {/* Project chip */}
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 6, background: 'var(--card)', border: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text2)' }}>
-                  <span style={{ width: 6, height: 6, borderRadius: 2, background: 'var(--primary)', display: 'inline-block' }} />
-                  {heroTask.project_key}
-                </span>
-                <span style={{ marginLeft: 'auto', fontFamily: 'ui-monospace, monospace', fontSize: 11, color: 'var(--text3)' }}>
-                  {heroTask.bucket === 'THIS_WEEK' ? 'this week' : heroTask.bucket === 'THIS_MONTH' ? 'this month' : 'parked'}
-                </span>
-              </div>
-              <div
-                style={{ fontSize: isDesktop ? 'var(--t-h2)' : 'var(--t-h3)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.25, marginBottom: 12 }}
-                onClick={() => setSelectedTaskId(heroTask.id)}
-                className="cursor-pointer"
-              >
-                {heroTask.text}
-              </div>
-              <div className="flex gap-2 flex-wrap">
-                <button
-                  onClick={() => setSelectedTaskId(heroTask.id)}
-                  style={{ height: 36, padding: '0 16px', background: 'var(--primary)', border: 'none', borderRadius: 'var(--r-sm)', color: '#fff', fontSize: 'var(--t-sm)', fontWeight: 600, cursor: 'pointer' }}
-                >
-                  Open task
-                </button>
-                <button
-                  onClick={() => handleToggle(heroTask.id)}
-                  style={{ height: 36, padding: '0 14px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', color: 'var(--text2)', fontSize: 'var(--t-sm)', cursor: 'pointer' }}
-                >
-                  ✓ Mark done
-                </button>
-              </div>
-            </HeroCard>
-          </div>
-        )}
 
-        {/* SUB — bucket list */}
-        {!loading && data && tasksAsItems.length > 0 && (
-          <div>
-            <TierLabel>SUB · ALL TASKS</TierLabel>
-          </div>
-        )}
-
-        {/* Task list */}
+        {/* Task list / Kanban */}
         {loading && !data ? (
           <div className="flex items-center justify-center" style={{ height: 180 }}>
             <div className="w-6 h-6 rounded-full border-2 border-[var(--primary)] border-t-transparent animate-spin" />
           </div>
-        ) : !data || tasksAsItems.length === 0 ? (
+        ) : !data || tasksAsItems.filter((t) => !t.parent_task_id).length === 0 ? (
           <div
             style={{
               textAlign: 'center',
@@ -658,7 +651,20 @@ function TasksPageInner() {
           >
             {activeFilterCount > 0 ? 'No tasks match these filters' : 'No open tasks'}
           </div>
+        ) : isDesktop ? (
+          /* Desktop: Kanban */
+          <div style={{ height: 'calc(100vh - 280px)', minHeight: 400 }}>
+            <TaskKanban
+              tasks={tasksAsItems}
+              showProject={!project}
+              onTaskTap={(t) => setSelectedTaskId(t.id)}
+              onBucketChange={handleBucketChange}
+              onComplete={handleCompleteFromKanban}
+              onReorder={handleReorder}
+            />
+          </div>
         ) : (
+          /* Mobile: list */
           <div>
             <TaskList
               tasks={tasksAsItems}
