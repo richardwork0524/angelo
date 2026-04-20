@@ -7,7 +7,7 @@ export async function POST(
 ) {
   const { childKey } = await params;
   const body = await request.json();
-  const { text, bucket, priority, is_owner_action, parent_task_id } = body;
+  const { text, bucket, priority, is_owner_action, parent_task_id, mission } = body;
 
   if (!text || typeof text !== "string" || !text.trim()) {
     return NextResponse.json(
@@ -45,6 +45,7 @@ export async function POST(
     if (priority) insertData.priority = priority;
     if (is_owner_action === true) insertData.is_owner_action = true;
     if (parent_task_id) insertData.parent_task_id = parent_task_id;
+    if (mission && typeof mission === 'string' && mission.trim()) insertData.mission = mission.trim();
 
     const { data, error } = await supabase
       .from("angelo_tasks")

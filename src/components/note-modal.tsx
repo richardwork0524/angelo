@@ -41,7 +41,6 @@ export function NoteModal() {
   const [text, setText] = useState('');
   const [projectKey, setProjectKey] = useState<string>('');
   const [feature, setFeature] = useState('');
-  const [mission, setMission] = useState('');
   const [version, setVersion] = useState('');
   const [sessionLogId, setSessionLogId] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -49,6 +48,14 @@ export function NoteModal() {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
+
+  // Mission combobox
+  const [mission, setMission] = useState('');
+  const [missionInput, setMissionInput] = useState('');
+  const [missionOptions, setMissionOptions] = useState<string[]>([]);
+  const [missionOpen, setMissionOpen] = useState(false);
+  const missionRef = useRef<HTMLInputElement>(null);
+  const missionDropRef = useRef<HTMLDivElement>(null);
 
   const isOpen = state.mode !== 'closed';
 
@@ -58,9 +65,12 @@ export function NoteModal() {
     setProjectKey('');
     setFeature('');
     setMission('');
+    setMissionInput('');
+    setMissionOptions([]);
     setVersion('');
     setSessionLogId(null);
     setShowAdvanced(false);
+    setMissionOpen(false);
     setError(null);
   }, []);
 
@@ -68,6 +78,18 @@ export function NoteModal() {
     setState({ mode: 'closed' });
     resetForm();
   }, [resetForm]);
+
+  // Fetch missions for project
+  const fetchMissions = useCallback(async (pk: string) => {
+    if (!pk) { setMissionOptions([]); return; }
+    try {
+      const res = await fetch(`/api/tasks?project=${encodeURIComponent(pk)}&completed=false`);
+      if (!res.ok) return;
+      const json = await res.json();
+      const byProject = json.missions?.by_project as Record<string, string[]> | undefined;
+      setMissionOptions(byProject?.[pk] ?? []);
+    } catch { /* silent */ }
+  }, []);
 
   useEffect(() => {
     function onQuickNote(evt: Event) {
@@ -93,9 +115,7 @@ export function NoteModal() {
         if (!cancelled && Array.isArray(json.projects)) {
           setProjects(json.projects);
         }
-      } catch {
-        // silent
-      }
+      } catch { /* silent */ }
     })();
     return () => { cancelled = true; };
   }, [projects.length]);
@@ -108,10 +128,13 @@ export function NoteModal() {
       setText('');
       setProjectKey(p.project_key || 'rinoa-os');
       setFeature(p.feature || '');
-      setMission(p.mission || '');
+      const m = p.mission || '';
+      setMission(m);
+      setMissionInput(m);
       setVersion(p.version || '');
       setSessionLogId(p.session_log_id ?? null);
-      setShowAdvanced(!!(p.feature || p.mission || p.version));
+      setShowAdvanced(!!(p.feature || p.version));
+      setMissionOpen(false);
       setError(null);
     } else if (state.mode === 'edit') {
       const n = state.note;
@@ -119,24 +142,66 @@ export function NoteModal() {
       setText(n.text);
       setProjectKey(n.project_key);
       setFeature(n.feature || '');
-      setMission(n.mission || '');
+      const m = n.mission || '';
+      setMission(m);
+      setMissionInput(m);
       setVersion(n.version || '');
       setSessionLogId(n.session_log_id);
-      setShowAdvanced(!!(n.feature || n.mission || n.version));
+      setShowAdvanced(!!(n.feature || n.version));
+      setMissionOpen(false);
       setError(null);
     }
     const t = setTimeout(() => textRef.current?.focus(), 80);
     return () => clearTimeout(t);
   }, [state]);
 
+  // Load missions when projectKey changes
+  useEffect(() => {
+    if (!isOpen || !projectKey) return;
+    fetchMissions(projectKey);
+  }, [isOpen, projectKey, fetchMissions]);
+
   useEffect(() => {
     if (!isOpen) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') close();
+      if (e.key === 'Escape') {
+        if (missionOpen) { setMissionOpen(false); return; }
+        close();
+      }
     }
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [isOpen, close]);
+  }, [isOpen, close, missionOpen]);
+
+  // Close mission dropdown on outside click
+  useEffect(() => {
+    if (!missionOpen) return;
+    function onClick(e: MouseEvent) {
+      if (
+        missionRef.current && !missionRef.current.contains(e.target as Node) &&
+        missionDropRef.current && !missionDropRef.current.contains(e.target as Node)
+      ) {
+        setMissionOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [missionOpen]);
+
+  function selectMission(m: string) {
+    setMission(m);
+    setMissionInput(m);
+    setMissionOpen(false);
+    missionRef.current?.blur();
+  }
+
+  const filteredMissions = missionOptions.filter((m) =>
+    m.toLowerCase().includes(missionInput.toLowerCase())
+  );
+
+  const showNewMissionOption =
+    missionInput.trim() !== '' &&
+    !missionOptions.some((m) => m.toLowerCase() === missionInput.toLowerCase().trim());
 
   async function onSave() {
     setError(null);
@@ -263,6 +328,7 @@ export function NoteModal() {
           maxHeight: '90vh',
         }}
       >
+        {/* Header */}
         <div
           className="flex items-start gap-3"
           style={{ padding: '16px 18px', borderBottom: '1px solid var(--border)' }}
@@ -284,8 +350,7 @@ export function NoteModal() {
             onClick={close}
             aria-label="Close"
             style={{
-              width: 28,
-              height: 28,
+              width: 28, height: 28,
               borderRadius: 'var(--r-sm)',
               background: 'transparent',
               border: '1px solid var(--border)',
@@ -369,7 +434,11 @@ export function NoteModal() {
             </div>
             <select
               value={projectKey}
-              onChange={(e) => setProjectKey(e.target.value)}
+              onChange={(e) => {
+                setProjectKey(e.target.value);
+                setMission('');
+                setMissionInput('');
+              }}
               disabled={isEdit}
               style={{
                 width: '100%',
@@ -393,7 +462,114 @@ export function NoteModal() {
             </select>
           </div>
 
-          {/* Advanced toggle */}
+          {/* Mission combobox — first-class field */}
+          <div style={{ position: 'relative' }}>
+            <div style={{ fontSize: 'var(--t-tiny)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>
+              Mission (optional)
+            </div>
+            <div style={{ position: 'relative' }}>
+              <input
+                ref={missionRef}
+                value={missionInput}
+                onChange={(e) => {
+                  setMissionInput(e.target.value);
+                  setMission(e.target.value);
+                  setMissionOpen(true);
+                }}
+                onFocus={() => setMissionOpen(true)}
+                placeholder="e.g. ANG-UI-M019"
+                style={{
+                  width: '100%',
+                  padding: '8px 32px 8px 10px',
+                  background: 'var(--bg)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--r-sm)',
+                  fontSize: 'var(--t-sm)',
+                  color: 'var(--text)',
+                  fontFamily: 'ui-monospace, monospace',
+                  outline: 'none',
+                }}
+              />
+              {missionInput && (
+                <button
+                  onClick={() => { setMission(''); setMissionInput(''); setMissionOpen(false); }}
+                  style={{
+                    position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                    background: 'transparent', border: 'none', color: 'var(--text3)',
+                    cursor: 'pointer', fontSize: 12, lineHeight: 1, padding: 2,
+                  }}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            {missionOpen && (filteredMissions.length > 0 || showNewMissionOption) && (
+              <div
+                ref={missionDropRef}
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  right: 0,
+                  zIndex: 50,
+                  background: 'var(--card)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--r-sm)',
+                  boxShadow: 'var(--sh-lg)',
+                  marginTop: 2,
+                  maxHeight: 200,
+                  overflowY: 'auto',
+                }}
+              >
+                {filteredMissions.map((m) => (
+                  <button
+                    key={m}
+                    onMouseDown={(e) => { e.preventDefault(); selectMission(m); }}
+                    style={{
+                      display: 'block',
+                      width: '100%',
+                      textAlign: 'left',
+                      padding: '8px 12px',
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'var(--text)',
+                      fontSize: 'var(--t-sm)',
+                      fontFamily: 'ui-monospace, monospace',
+                      cursor: 'pointer',
+                      borderBottom: '1px solid var(--border)',
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--card-alt)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    {m}
+                  </button>
+                ))}
+                {showNewMissionOption && (
+                  <button
+                    onMouseDown={(e) => { e.preventDefault(); selectMission(missionInput.trim()); }}
+                    style={{
+                      display: 'block',
+                      width: '100%',
+                      textAlign: 'left',
+                      padding: '8px 12px',
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'var(--primary-2)',
+                      fontSize: 'var(--t-sm)',
+                      fontFamily: 'ui-monospace, monospace',
+                      cursor: 'pointer',
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--card-alt)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    ＋ New mission: &ldquo;{missionInput.trim()}&rdquo;
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Advanced toggle — feature + version only now */}
           <button
             type="button"
             onClick={() => setShowAdvanced((v) => !v)}
@@ -407,13 +583,12 @@ export function NoteModal() {
               padding: 0,
             }}
           >
-            {showAdvanced ? '▾' : '▸'} {showAdvanced ? 'Hide' : 'Show'} feature / mission / version
+            {showAdvanced ? '▾' : '▸'} {showAdvanced ? 'Hide' : 'Show'} feature / version
           </button>
 
           {showAdvanced && (
             <div className="flex flex-col gap-3">
               <LabeledInput label="Feature" value={feature} onChange={setFeature} placeholder="e.g. redesign" />
-              <LabeledInput label="Mission" value={mission} onChange={setMission} placeholder="e.g. ANG-UI-M019" />
               <LabeledInput label="Version" value={version} onChange={setVersion} placeholder="e.g. v0.3" />
             </div>
           )}
@@ -434,6 +609,7 @@ export function NoteModal() {
           )}
         </div>
 
+        {/* Footer */}
         <div
           className="flex items-center gap-2"
           style={{ padding: '12px 18px', borderTop: '1px solid var(--border)', background: 'var(--card-alt)', borderBottomLeftRadius: 'var(--r-lg)', borderBottomRightRadius: 'var(--r-lg)' }}

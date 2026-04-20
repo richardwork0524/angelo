@@ -206,7 +206,15 @@ export default function EntityDetailPage({ params }: { params: Promise<{ key: st
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-            <GhostButton disabled>＋ Note</GhostButton>
+            <GhostButton
+              onClick={() =>
+                window.dispatchEvent(new CustomEvent('quick-note', {
+                  detail: { project_key: entity.child_key },
+                }))
+              }
+            >
+              ＋ Note
+            </GhostButton>
             <GhostButton disabled>Vault →</GhostButton>
             <PrimaryButton disabled>{addLabel}</PrimaryButton>
           </div>
@@ -543,10 +551,11 @@ function Dot({ color, title }: { color: string; title?: string }) {
   return <span style={{ width: 6, height: 6, borderRadius: '50%', background: color, display: 'inline-block' }} title={title} />;
 }
 
-function GhostButton({ children, disabled }: { children: React.ReactNode; disabled?: boolean }) {
+function GhostButton({ children, disabled, onClick }: { children: React.ReactNode; disabled?: boolean; onClick?: () => void }) {
   return (
     <button
       disabled={disabled}
+      onClick={onClick}
       style={{
         padding: '8px 12px',
         background: 'var(--card)',
