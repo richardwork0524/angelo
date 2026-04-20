@@ -224,6 +224,19 @@ export default function SessionsPage() {
     return Math.max(1, ...effs);
   }, [week]);
 
+  // Surface mix — computed from the current filtered session window
+  const surfaceMix = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const s of sessions) {
+      const surf = s.surface || 'OTHER';
+      counts[surf] = (counts[surf] || 0) + 1;
+    }
+    const total = sessions.length || 1;
+    return Object.entries(counts)
+      .map(([surface, count]) => ({ surface, count, pct: Math.round((count / total) * 100) }))
+      .sort((a, b) => b.count - a.count);
+  }, [sessions]);
+
   const todayIso = new Date().toISOString().slice(0, 10);
 
   // Group sessions into today / this-week / older for hero hierarchy
@@ -317,6 +330,11 @@ export default function SessionsPage() {
               todayIso={todayIso}
             />
           </div>
+        )}
+
+        {/* Surface mix bar — 7d */}
+        {sessions.length > 0 && (
+          <SurfaceMixBar surfaceMix={surfaceMix} />
         )}
 
         {/* Search */}
@@ -824,6 +842,88 @@ function SessionRowItem({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+const SURFACE_BAR_COLOR: Record<string, string> = {
+  CODE:   'var(--accent, #0a84ff)',
+  CHAT:   'var(--green, #30d158)',
+  COWORK: 'var(--purple, #bf5af2)',
+  MOBILE: 'var(--orange, #ff9f0a)',
+  OTHER:  'var(--text3)',
+};
+
+function SurfaceMixBar({ surfaceMix }: { surfaceMix: { surface: string; count: number; pct: number }[] }) {
+  if (surfaceMix.length === 0) return null;
+  return (
+    <div
+      style={{
+        background: 'var(--card)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--r)',
+        padding: 16,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 'var(--t-tiny)',
+          color: 'var(--text3)',
+          textTransform: 'uppercase',
+          letterSpacing: '.06em',
+          marginBottom: 10,
+          fontWeight: 700,
+        }}
+      >
+        Surface Mix · Current View
+      </div>
+      {/* Stacked bar */}
+      <div
+        style={{
+          display: 'flex',
+          gap: 2,
+          height: 8,
+          borderRadius: 4,
+          overflow: 'hidden',
+          marginBottom: 12,
+        }}
+      >
+        {surfaceMix.map(({ surface, pct }) => (
+          <div
+            key={surface}
+            style={{
+              flex: pct,
+              background: SURFACE_BAR_COLOR[surface] || 'var(--text3)',
+              minWidth: pct > 0 ? 2 : 0,
+            }}
+            title={`${surface}: ${pct}%`}
+          />
+        ))}
+      </div>
+      {/* Legend */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
+          gap: '6px 12px',
+        }}
+      >
+        {surfaceMix.map(({ surface, pct }) => (
+          <div key={surface} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                background: SURFACE_BAR_COLOR[surface] || 'var(--text3)',
+                flexShrink: 0,
+              }}
+            />
+            <span style={{ color: 'var(--text2)', flex: 1 }}>{surface}</span>
+            <span style={{ fontFamily: 'ui-monospace, monospace', color: 'var(--text3)' }}>{pct}%</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
