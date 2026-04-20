@@ -147,14 +147,25 @@ function TasksPageInner() {
   const [showCompleted, setShowCompleted] = useState(false);
   const [search, setSearch] = useState('');
   const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const [filterType, setFilterType] = useState<string>('');
 
   const [data, setData] = useState<TasksApiResponse | null>(null);
+
+  // Derived: distinct entity types for hierarchical filter
+  const entityTypes = useMemo(() => {
+    if (!data) return [];
+    const types = new Set(data.projects.map((p) => p.entity_type).filter(Boolean) as string[]);
+    return Array.from(types).sort();
+  }, [data]);
+
+  // Derived: projects filtered by selected type
+  const filteredProjects = useMemo(() => {
+    if (!data) return [];
+    if (!filterType) return data.projects;
+    return data.projects.filter((p) => p.entity_type === filterType);
+  }, [data, filterType]);
   const [loading, setLoading] = useState(true);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-  const [quickAddText, setQuickAddText] = useState('');
-  const [quickAddBucket, setQuickAddBucket] = useState('THIS_WEEK');
-  const [quickAddProject, setQuickAddProject] = useState<string>('');
-  const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
   // Build API URL from filters
@@ -175,13 +186,11 @@ function TasksPageInner() {
       if (force) invalidateCache('/api/tasks');
       const d = await cachedFetch<TasksApiResponse>(apiUrl, 5000);
       setData(d);
-      // Seed quick-add project with current filter or first project
-      setQuickAddProject((prev) => prev || project || d.projects[0]?.child_key || '');
     } catch {
       setData(null);
     }
     setLoading(false);
-  }, [apiUrl, project]);
+  }, [apiUrl]);
 
   useEffect(() => { fetchTasks(); }, [fetchTasks]);
 
@@ -291,7 +300,16 @@ function TasksPageInner() {
     setSelectedTaskId(null);
     bgMutate({
       request: () => fetch(`/api/tasks/${taskId}`, { method: 'DELETE' }),
-      ...syncOpts('Task deleted'),
+      onSuccess: () => {
+        showToast('Task deleted');
+        invalidateCache('/api/tasks');
+        invalidateCache('/api/home');
+        // Don't refetch — optimistic remove is source of truth; avoids race where task reappears
+      },
+      onError: () => {
+        showToast('Delete failed — restoring');
+        fetchTasks(true);
+      },
     });
   }
 
@@ -357,42 +375,9 @@ function TasksPageInner() {
     });
   }
 
-  async function handleQuickAdd(e: React.FormEvent) {
-    e.preventDefault();
-    if (!quickAddText.trim()) {
-      showToast('Task text required');
-      return;
-    }
-    if (!quickAddProject) {
-      showToast('Pick a project');
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const res = await fetch('/api/tasks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          project_key: quickAddProject,
-          text: quickAddText.trim(),
-          bucket: quickAddBucket,
-        }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setQuickAddText('');
-      invalidateCache('/api/tasks');
-      invalidateCache('/api/home');
-      showToast('Task added');
-      fetchTasks(true);
-    } catch {
-      showToast('Add failed — try again');
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
   function clearFilters() {
     setProject('');
+    setFilterType('');
     setBucket('');
     setPriority('');
     setMission('');
@@ -401,6 +386,7 @@ function TasksPageInner() {
   }
 
   const activeFilterCount =
+    (filterType ? 1 : 0) +
     (project ? 1 : 0) +
     (bucket ? 1 : 0) +
     (priority ? 1 : 0) +
@@ -422,7 +408,7 @@ function TasksPageInner() {
   const heroAccent = TASK_PRI_HEX[heroTask?.priority || 'P2'] ?? '#6366F1';
 
   return (
-    <div className="h-full overflow-y-auto" data-testid="tasks-page">
+    <div className="h-full overflow-y-auto" data-testid="tasks-page" style={{ overscrollBehaviorY: 'contain', overflowX: 'hidden' }}>
       <div
         className="mx-auto"
         style={{
@@ -481,13 +467,24 @@ function TasksPageInner() {
             }}
           >
             <select
+              value={filterType}
+              onChange={(e) => { setFilterType(e.target.value); setProject(''); }}
+              style={selectStyle}
+              aria-label="Type filter"
+            >
+              <option value="">All types</option>
+              {entityTypes.map((t) => (
+                <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
+              ))}
+            </select>
+            <select
               value={project}
               onChange={(e) => setProject(e.target.value)}
               style={selectStyle}
               aria-label="Project filter"
             >
-              <option value="">All projects</option>
-              {(data?.projects || []).map((p) => (
+              <option value="">All {filterType || 'projects'}</option>
+              {filteredProjects.map((p) => (
                 <option key={p.child_key} value={p.child_key}>
                   {p.display_name}
                 </option>
@@ -575,69 +572,6 @@ function TasksPageInner() {
             </div>
           </div>
         )}
-
-        {/* Quick-add */}
-        <form
-          onSubmit={handleQuickAdd}
-          style={{
-            padding: '8px 10px',
-            background: 'var(--card)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--r)',
-            display: 'flex',
-            gap: 6,
-            alignItems: 'center',
-            flexWrap: 'wrap',
-          }}
-        >
-          <select
-            value={quickAddProject}
-            onChange={(e) => setQuickAddProject(e.target.value)}
-            style={{ ...selectStyle, maxWidth: 140 }}
-            aria-label="Quick-add project"
-          >
-            {(data?.projects || []).map((p) => (
-              <option key={p.child_key} value={p.child_key}>
-                {p.display_name}
-              </option>
-            ))}
-          </select>
-          <select
-            value={quickAddBucket}
-            onChange={(e) => setQuickAddBucket(e.target.value)}
-            style={selectStyle}
-            aria-label="Quick-add bucket"
-          >
-            <option value="THIS_WEEK">Week</option>
-            <option value="THIS_MONTH">Month</option>
-            <option value="PARKED">Parked</option>
-          </select>
-          <input
-            value={quickAddText}
-            onChange={(e) => setQuickAddText(e.target.value)}
-            placeholder="Add task…"
-            style={{ ...selectStyle, flex: 1, minWidth: 180 }}
-            aria-label="Quick-add text"
-          />
-          <button
-            type="submit"
-            disabled={submitting || !quickAddText.trim() || !quickAddProject}
-            style={{
-              padding: '6px 14px',
-              fontSize: 'var(--t-sm)',
-              background: 'var(--primary)',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 'var(--r-sm)',
-              cursor: submitting ? 'wait' : 'pointer',
-              opacity: submitting || !quickAddText.trim() || !quickAddProject ? 0.4 : 1,
-              fontWeight: 600,
-            }}
-          >
-            {submitting ? '…' : 'Add'}
-          </button>
-        </form>
-
 
         {/* Task list / Kanban */}
         {loading && !data ? (

@@ -85,11 +85,23 @@ function absDelta(today: number, yesterday: number): { label: string; dir: 'up' 
   return { label: String(Math.abs(delta)), dir: delta > 0 ? 'up' : 'down' };
 }
 
+function splitScopeName(name: string): { main: string; sub: string | null } {
+  const idx = name.search(/ [—–-]{1,2} /);
+  if (idx === -1) return { main: name, sub: null };
+  return { main: name.slice(0, idx), sub: name.slice(idx).replace(/^ [—–-]{1,2} /, '') };
+}
+
 export default function HomePage() {
   const router = useRouter();
   const [data, setData] = useState<HomeData | null>(null);
   const [loading, setLoading] = useState(true);
   const [topTask, setTopTask] = useState<TopTask | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+
+  function showToast(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(null), 2500);
+  }
 
   const fetchHome = useCallback(async () => {
     try {
@@ -126,7 +138,13 @@ export default function HomePage() {
 
   function handleUnmount() {
     if (!mounted) return;
-    patchHandoff(mounted.id, { is_mounted: false }, { onSuccess: () => fetchHome() });
+    // Optimistic: clear immediately, show message, sync in background
+    const unmountedId = mounted.id;
+    setData((prev) => prev ? { ...prev, mounted_handoffs: [] } : prev);
+    showToast('Handoff unmounted');
+    setTimeout(() => {
+      patchHandoff(unmountedId, { is_mounted: false }, { onSuccess: () => fetchHome() });
+    }, 500);
   }
 
   function handleNewNote() {
@@ -165,8 +183,8 @@ export default function HomePage() {
   const costDelta = pctDelta(today.cost, yesterday.cost);
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="max-w-[1280px] mx-auto px-4 md:px-8 py-5 md:py-7">
+    <div className="h-full overflow-y-auto" style={{ overscrollBehaviorY: 'contain', overflowX: 'hidden' }}>
+      <div className="max-w-[1280px] mx-auto px-4 md:px-8 py-5 md:py-7 pb-8">
         {/* Page head */}
         <div className="flex items-end justify-between mb-6 gap-4 flex-wrap">
           <div>
@@ -227,7 +245,7 @@ export default function HomePage() {
         <div className="mt-4">
           <TierLabel>SUB · CURRENT HANDOFF</TierLabel>
           {mounted ? (
-            <MountedHero handoff={mounted} onUnmount={handleUnmount} onOpenDetail={() => router.push('/handoffs')} />
+            <MountedHero handoff={mounted} onUnmount={handleUnmount} onOpenDetail={() => router.push(`/handoff/${mounted.id}`)} />
           ) : (
             <EmptyHero onBrowse={() => router.push('/handoffs')} />
           )}
@@ -305,6 +323,29 @@ export default function HomePage() {
           </section>
         </div>
       </div>
+
+      {/* Toast */}
+      {toast && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: 80,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: 'var(--card)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--r)',
+            padding: '8px 16px',
+            fontSize: 'var(--t-sm)',
+            color: 'var(--text)',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            zIndex: 1000,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {toast}
+        </div>
+      )}
     </div>
   );
 }
@@ -378,17 +419,21 @@ function MountedHero({
           </span>
         </div>
 
-        <div
-          className="truncate"
-          style={{
-            fontSize: 'var(--t-h1)',
-            fontWeight: 600,
-            letterSpacing: '-.01em',
-            marginBottom: 6,
-          }}
-        >
-          {handoff.scope_name}
-        </div>
+        {(() => {
+          const { main, sub } = splitScopeName(handoff.scope_name);
+          return (
+            <div style={{ marginBottom: 6 }}>
+              <div style={{ fontSize: 'var(--t-h1)', fontWeight: 600, letterSpacing: '-.01em', lineHeight: 1.25 }}>
+                {main}
+              </div>
+              {sub && (
+                <div style={{ fontSize: 'var(--t-body)', fontWeight: 400, color: 'var(--text2)', marginTop: 2 }}>
+                  {sub}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         <div
           className="flex items-center gap-1.5 flex-wrap mb-2"

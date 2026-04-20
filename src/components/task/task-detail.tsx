@@ -140,28 +140,44 @@ export function TaskDetail({ task, subtasks = [], onClose, onUpdate, onDelete, o
   const panelContent = (
     <div className={`flex flex-col h-full bg-[var(--surface)] ${isDesktop ? 'border-l border-[var(--border)]' : ''}`}>
       {/* ── Header ── */}
-      <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-[var(--border)]">
-        <button onClick={handleClose} className="flex items-center gap-1 text-[var(--accent)] text-[14px]">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M10 4L6 8L10 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          Back
-        </button>
-        <div className="flex items-center gap-2">
-          {localTask.task_code && (
-            <span className="text-[11px] font-mono text-[var(--accent)]">{localTask.task_code}</span>
-          )}
-          <span className="text-[11px] text-[var(--text3)]">{localTask.project_key}</span>
+      <div className="shrink-0 px-4 pt-3 pb-2 border-b border-[var(--border)]">
+        <div className="flex items-center justify-between mb-1.5">
+          <button onClick={handleClose} className="flex items-center gap-1 text-[var(--accent)] text-[14px]">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M10 4L6 8L10 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            Back
+          </button>
+          <button onClick={handleClose} className="w-8 h-8 rounded-full hover:bg-[var(--card)] flex items-center justify-center text-[var(--text3)]">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M4 4L12 12M12 4L4 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </button>
         </div>
-        <button onClick={handleClose} className="w-8 h-8 rounded-full hover:bg-[var(--card)] flex items-center justify-center text-[var(--text3)]">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M4 4L12 12M12 4L4 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-          </svg>
-        </button>
+        {/* Breadcrumb */}
+        <div className="flex items-center gap-1 flex-wrap" style={{ fontSize: 11, color: 'var(--text3)' }}>
+          <span style={{ fontWeight: 600, color: 'var(--text2)' }}>{localTask.project_key}</span>
+          {localTask.mission && (
+            <>
+              <span>›</span>
+              <span style={{ color: 'var(--purple)', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {localTask.mission}
+              </span>
+            </>
+          )}
+          {localTask.task_code && (
+            <>
+              <span>·</span>
+              <span style={{ fontFamily: 'ui-monospace, monospace', color: 'var(--accent)', fontWeight: 600 }}>
+                {localTask.task_code}
+              </span>
+            </>
+          )}
+        </div>
       </div>
 
       {/* ── Body ── */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto" style={{ overscrollBehavior: 'contain', overflowX: 'hidden' }}>
         {/* Surface lock banner */}
         {isLocked && (
           <div

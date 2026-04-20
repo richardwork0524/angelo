@@ -30,14 +30,14 @@ export function PreviewPopup({ open, onClose, children }: PreviewPopupProps) {
       onClick={(e) => { if (e.target === overlayRef.current) onClose(); }}
     >
       <div
-        className="bg-[var(--surface)] rounded-t-[16px] sm:rounded-[16px] w-full max-w-[480px] overflow-hidden max-h-[85vh] overflow-y-auto"
+        className="bg-[var(--surface)] rounded-t-[16px] sm:rounded-[16px] w-full max-w-[480px] flex flex-col max-h-[85vh]"
         style={{
           boxShadow: '0 8px 40px rgba(0,0,0,.4), 0 2px 12px rgba(0,0,0,.2)',
           animation: 'popIn .2s ease',
         }}
       >
         {/* Mobile handle */}
-        <div className="sm:hidden flex justify-center pt-2 pb-1">
+        <div className="sm:hidden flex justify-center pt-2 pb-1 shrink-0">
           <div className="w-8 h-1 rounded-full bg-[var(--border2)]" />
         </div>
         {children}
@@ -49,26 +49,36 @@ export function PreviewPopup({ open, onClose, children }: PreviewPopupProps) {
 
 /* Shared popup subcomponents */
 
-export function PopupHead({ icon, iconBg, iconColor, title, meta, onClose }: {
+export function PopupHead({ icon, iconBg, iconColor, title, subtitle, meta, onClose }: {
   icon: ReactNode;
   iconBg: string;
   iconColor: string;
   title: string;
+  subtitle?: string;
   meta: ReactNode;
   onClose: () => void;
 }) {
   return (
-    <div className="flex items-start gap-2.5 px-5 pt-4">
+    <div className="flex items-start gap-2.5 px-5 pt-4 shrink-0">
       <div className="w-9 h-9 rounded-[10px] flex items-center justify-center shrink-0" style={{ background: iconBg, color: iconColor }}>
         {icon}
       </div>
       <div className="flex-1 min-w-0">
-        <h3 className="text-[15px] font-bold mb-0.5 truncate">{title}</h3>
-        <div className="text-[11px] text-[var(--text2)] flex gap-1.5 items-center flex-wrap">{meta}</div>
+        <h3 className="text-[15px] font-bold leading-tight">{title}</h3>
+        {subtitle && <p className="text-[12px] text-[var(--text2)] mt-0.5">{subtitle}</p>}
+        <div className="text-[11px] text-[var(--text2)] flex gap-1.5 items-center flex-wrap mt-1">{meta}</div>
       </div>
       <button onClick={onClose} className="w-7 h-7 rounded-[6px] flex items-center justify-center text-[var(--text3)] hover:bg-[var(--card)] hover:text-[var(--text)] transition-colors shrink-0 text-[18px]">
         &times;
       </button>
+    </div>
+  );
+}
+
+export function PopupBody({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex-1 min-h-0 overflow-y-auto">
+      {children}
     </div>
   );
 }
@@ -88,7 +98,9 @@ export function PopupStats({ stats }: { stats: { label: string; value: string; c
 
 export function PopupFooter({ children }: { children: ReactNode }) {
   return (
-    <div className="flex gap-2 px-5 pb-4 justify-end">{children}</div>
+    <div className="flex gap-2 px-5 py-3 justify-end shrink-0 border-t border-[var(--border)] flex-wrap">
+      {children}
+    </div>
   );
 }
 

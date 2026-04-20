@@ -88,7 +88,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         <div className="flex flex-col flex-1 min-h-0" style={{ overflow: 'hidden' }}>
           <LiveRibbon session={session} />
-          <main className="overflow-y-auto flex-1 min-h-0" style={{ background: 'var(--bg)' }}>
+          <main className="overflow-y-auto flex-1 min-h-0" style={{ background: 'var(--bg)', overscrollBehavior: 'none', overflowX: 'hidden' }}>
             {children}
           </main>
           <BottomNav />

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { PreviewPopup, PopupHead, PopupStats, PopupFooter, PopupBtn } from '@/components/preview-popup';
+import { PreviewPopup, PopupHead, PopupBody, PopupStats, PopupFooter, PopupBtn } from '@/components/preview-popup';
 import { patchHandoff } from '@/lib/mutate';
 import type { Handoff } from '@/lib/types';
 
@@ -87,13 +87,18 @@ export function HandoffPopup({ handoff: handoffProp, open, onClose, onUpdate }: 
     });
   }
 
+  const titleParts = handoff.scope_name.split(/ [—–-]{1,2} /);
+  const titleMain = titleParts[0];
+  const titleSub = titleParts.length > 1 ? titleParts.slice(1).join(' — ') : undefined;
+
   return (
     <PreviewPopup open={open} onClose={onClose}>
       <PopupHead
         icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="15" x2="15" y2="15"/><line x1="9" y1="11" x2="13" y2="11"/></svg>}
         iconBg={sc.bg}
         iconColor={sc.text}
-        title={handoff.scope_name}
+        title={titleMain}
+        subtitle={titleSub}
         meta={
           <>
             {handoff.handoff_code && <span className="font-mono" style={{ color: sc.text }}>{handoff.handoff_code}</span>}
@@ -106,6 +111,7 @@ export function HandoffPopup({ handoff: handoffProp, open, onClose, onUpdate }: 
         onClose={onClose}
       />
 
+      <PopupBody>
       <div className="px-5 py-3.5">
         <PopupStats stats={[
           { label: 'Done', value: String(handoff.sections_completed), color: 'var(--green)' },
@@ -161,6 +167,7 @@ export function HandoffPopup({ handoff: handoffProp, open, onClose, onUpdate }: 
           )}
         </div>
       </div>
+      </PopupBody>
 
       <PopupFooter>
         <PopupBtn variant="copy" onClick={handleCopy}>{copyLabel}</PopupBtn>
