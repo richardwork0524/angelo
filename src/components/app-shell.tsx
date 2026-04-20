@@ -7,6 +7,7 @@ import { Topbar } from './topbar';
 import { NoteModal } from './note-modal';
 import { useLiveSession } from '@/hooks/use-live-session';
 import { LiveRibbon } from './live-ribbon';
+import { BottomNav } from './bottom-nav';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [navOpen, setNavOpen] = useState(false);
@@ -85,6 +86,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <main className="overflow-y-auto flex-1 min-h-0" style={{ background: 'var(--bg)' }}>
             {children}
           </main>
+          <BottomNav />
         </div>
       </div>
       <NoteModal />

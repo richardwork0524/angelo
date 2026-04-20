@@ -16,6 +16,13 @@ const nextConfig: NextConfig = {
     optimizePackageImports: ["@supabase/supabase-js"],
   },
 
+  // Redirects for retired routes
+  async redirects() {
+    return [
+      { source: '/board', destination: '/tasks', permanent: false },
+    ];
+  },
+
   // Cache headers for API routes and static assets
   async headers() {
     return [
