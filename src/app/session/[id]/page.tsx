@@ -6,6 +6,8 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { StatusBadge } from '@/components/status-badge';
 import { PurposeChip, purposeFromEntry } from '@/components/handoff-card';
+import { ReattributeStrip } from '@/components/reattribute-strip';
+import { ReattributionToast } from '@/components/reattribution-toast';
 import type { SessionLog, SessionEvent, Task, Handoff } from '@/lib/types';
 
 interface SessionDetail extends SessionLog {
@@ -65,6 +67,8 @@ export default function SessionDetailPage() {
   const [mountedHandoffs, setMountedHandoffs] = useState<Handoff[]>([]);
   const [loading, setLoading] = useState(true);
   const [copyLabel, setCopyLabel] = useState('Copy Handoff');
+  const [currentProjectKey, setCurrentProjectKey] = useState<string | null>(null);
+  const [undoState, setUndoState] = useState<{ sessionId: string; newProjectKey: string; previousProjectKey: string | null } | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -75,7 +79,10 @@ export default function SessionDetailPage() {
         supabase.from('angelo_handoffs').select('*').eq('created_by_session_id', id),
         supabase.from('angelo_handoffs').select('*').eq('picked_up_by_session_id', id),
       ]);
-      if (sess) setSession(sess as SessionDetail);
+      if (sess) {
+        setSession(sess as SessionDetail);
+        setCurrentProjectKey((sess as SessionDetail).project_key ?? null);
+      }
       if (evts) setEvents(evts);
       setEmittedHandoffs(createdHs || []);
       setMountedHandoffs(mountedHs || []);
@@ -386,6 +393,19 @@ export default function SessionDetailPage() {
 
           {/* Rail col */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {/* Attribution */}
+            <SectionCard>
+              <SectionHead title="Attribution" />
+              <ReattributeStrip
+                sessionId={id}
+                currentProjectKey={currentProjectKey}
+                onReattributed={(newKey, prevKey) => {
+                  setCurrentProjectKey(newKey);
+                  setUndoState({ sessionId: id, newProjectKey: newKey, previousProjectKey: prevKey });
+                }}
+              />
+            </SectionCard>
+
             {/* Linked handoff */}
             {linkedHandoff && (
               <SectionCard>
@@ -463,6 +483,28 @@ export default function SessionDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Undo toast for re-assign from detail page */}
+      {undoState && (
+        <ReattributionToast
+          sessionId={undoState.sessionId}
+          newProjectKey={undoState.newProjectKey}
+          previousProjectKey={undoState.previousProjectKey}
+          onUndo={async (sessionId, previousProjectKey) => {
+            if (!previousProjectKey) return;
+            const res = await fetch(`/api/sessions/${sessionId}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ project_key: previousProjectKey }),
+            });
+            const result = await res.json();
+            if (result.success) {
+              setCurrentProjectKey(previousProjectKey);
+            }
+          }}
+          onDismiss={() => setUndoState(null)}
+        />
+      )}
     </div>
   );
 }
