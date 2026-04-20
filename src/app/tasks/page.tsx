@@ -245,7 +245,26 @@ function TasksPageInner() {
   const optimisticRemove = (taskId: string) => {
     setData((prev) => {
       if (!prev) return prev;
-      return { ...prev, tasks: prev.tasks.filter((t) => t.id !== taskId) };
+      // Remove the task AND any of its subtasks from the list
+      const removed = new Set<string>();
+      removed.add(taskId);
+      prev.tasks.forEach((t) => { if (t.parent_task_id === taskId) removed.add(t.id); });
+      const remaining = prev.tasks.filter((t) => !removed.has(t.id));
+      // Recompute stats so the header count reflects the removal immediately
+      const openTasks = remaining.filter((t) => !t.completed);
+      const stats = {
+        ...prev.stats,
+        total: remaining.length,
+        open: openTasks.length,
+        completed: remaining.length - openTasks.length,
+        p0: openTasks.filter((t) => t.priority === 'P0').length,
+        p1: openTasks.filter((t) => t.priority === 'P1').length,
+        p2: openTasks.filter((t) => t.priority === 'P2').length,
+        this_week: openTasks.filter((t) => t.bucket === 'THIS_WEEK').length,
+        this_month: openTasks.filter((t) => t.bucket === 'THIS_MONTH').length,
+        parked: openTasks.filter((t) => t.bucket === 'PARKED').length,
+      };
+      return { ...prev, tasks: remaining, stats };
     });
   };
 
@@ -304,7 +323,10 @@ function TasksPageInner() {
         showToast('Task deleted');
         invalidateCache('/api/tasks');
         invalidateCache('/api/home');
-        // Don't refetch — optimistic remove is source of truth; avoids race where task reappears
+        // Refetch to flush stale IndexedDB cache — without this, a page refresh
+        // serves the old IDB entry (which still contains the deleted task) before
+        // the background revalidation completes, making the task "reappear".
+        fetchTasks(true);
       },
       onError: () => {
         showToast('Delete failed — restoring');
