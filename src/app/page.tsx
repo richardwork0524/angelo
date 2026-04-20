@@ -147,6 +147,7 @@ export default function HomePage() {
         onSuccess: () => {
           invalidateCache(`/api/handoff/${unmountedId}`);
           invalidateCache('/api/handoffs');
+          window.dispatchEvent(new Event('handoffs-changed'));
           fetchHome();
         },
       });

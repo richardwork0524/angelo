@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { cachedFetch } from '@/lib/cache';
+import { cachedFetch, invalidateCache } from '@/lib/cache';
 import { useCommandPalette } from '@/hooks/use-command-palette';
 
 interface NavItem {
@@ -58,7 +58,8 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
   // Best-effort counts via /api/home — silently degrades if shape doesn't match
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+
+    async function loadCounts() {
       try {
         const data = await cachedFetch<{
           handoffs_active?: number;
@@ -82,8 +83,47 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
       } catch {
         // Silent
       }
-    })();
+    }
+
+    loadCounts();
     return () => { cancelled = true; };
+  }, []);
+
+  // Live counter updates — invalidate cache and re-fetch on any entity mutation
+  useEffect(() => {
+    function onChanged() {
+      invalidateCache('/api/home');
+      cachedFetch<{
+        handoffs_active?: number;
+        notes_unresolved?: number;
+        sessions_total?: number;
+        entities_total?: number;
+        system_issues?: number;
+        vault_files?: number;
+        tasks_open?: number;
+      }>('/api/home', 30000).then((data) => {
+        setCounts({
+          handoffs: data.handoffs_active,
+          notes: data.notes_unresolved,
+          sessions: data.sessions_total,
+          entities: data.entities_total,
+          system: data.system_issues,
+          vault: data.vault_files,
+          tasks: data.tasks_open,
+        });
+      }).catch(() => { /* silent */ });
+    }
+
+    window.addEventListener('tasks-changed', onChanged);
+    window.addEventListener('notes-changed', onChanged);
+    window.addEventListener('handoffs-changed', onChanged);
+    window.addEventListener('sessions-changed', onChanged);
+    return () => {
+      window.removeEventListener('tasks-changed', onChanged);
+      window.removeEventListener('notes-changed', onChanged);
+      window.removeEventListener('handoffs-changed', onChanged);
+      window.removeEventListener('sessions-changed', onChanged);
+    };
   }, []);
 
   function isActive(item: NavItem): boolean {

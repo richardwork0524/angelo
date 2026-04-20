@@ -46,7 +46,7 @@ export function HandoffPopup({ handoff: handoffProp, open, onClose, onUpdate }: 
     if (acting) return;
     setActing(true);
     patchHandoff(localHandoff!.id, newStatus, {
-      onSuccess: () => { setActing(false); onUpdate?.(); onClose(); },
+      onSuccess: () => { setActing(false); window.dispatchEvent(new Event('handoffs-changed')); onUpdate?.(); onClose(); },
       onError: () => { setActing(false); },
     });
   }
@@ -58,7 +58,7 @@ export function HandoffPopup({ handoff: handoffProp, open, onClose, onUpdate }: 
     setLocalHandoff((h) => (h ? { ...h, is_mounted: next } : h));
     setActing(true);
     patchHandoff(localHandoff!.id, { is_mounted: next }, {
-      onSuccess: () => { setActing(false); onUpdate?.(); },
+      onSuccess: () => { setActing(false); window.dispatchEvent(new Event('handoffs-changed')); onUpdate?.(); },
       onError: () => {
         setActing(false);
         // Revert on failure

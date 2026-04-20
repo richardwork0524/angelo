@@ -289,6 +289,7 @@ function TasksPageInner() {
       showToast(msg);
       invalidateCache('/api/tasks');
       invalidateCache('/api/home');
+      window.dispatchEvent(new Event('tasks-changed'));
       fetchTasks(true);
     },
     onError: () => {
@@ -339,6 +340,7 @@ function TasksPageInner() {
         showToast('Task deleted');
         invalidateCache('/api/tasks');
         invalidateCache('/api/home');
+        window.dispatchEvent(new Event('tasks-changed'));
         // Refetch to flush stale IndexedDB cache — without this, a page refresh
         // serves the old IDB entry (which still contains the deleted task) before
         // the background revalidation completes, making the task "reappear".
