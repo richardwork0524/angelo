@@ -8,6 +8,8 @@ import { StatusBadge } from '@/components/status-badge';
 import { PurposeChip, purposeFromEntry } from '@/components/handoff-card';
 import { ReattributeStrip } from '@/components/reattribute-strip';
 import { ReattributionToast } from '@/components/reattribution-toast';
+import { ShortcutPill } from '@/components/shortcut-pill';
+import { useHotkeys } from '@/hooks/use-hotkeys';
 import type { SessionLog, SessionEvent, Task, Handoff } from '@/lib/types';
 
 interface SessionDetail extends SessionLog {
@@ -110,6 +112,11 @@ export default function SessionDetailPage() {
       setTimeout(() => setCopyLabel('Copy Handoff'), 2000);
     });
   }, [session, events, touchedTasks]);
+
+  // Desktop shortcut: R → navigate to sessions page (re-attribution via drag UI there)
+  useHotkeys({
+    'r': () => router.push('/sessions'),
+  }, [router], { enabled: !!session });
 
   if (loading) {
     return (
@@ -214,7 +221,9 @@ export default function SessionDetailPage() {
               </div>
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0, alignItems: 'center' }}>
+            {/* Desktop shortcut pills */}
+            <ShortcutPill label="R Re-assign" onClick={() => router.push('/sessions')} />
             <GhostButton onClick={handleCopy}>{copyLabel}</GhostButton>
             <GhostButton disabled>＋ Note</GhostButton>
           </div>
