@@ -11,6 +11,8 @@ import { HeroCard, TierLabel } from '@/components/hero-card';
 import { TaskKanban } from '@/components/task/task-kanban';
 import type { TaskItem } from '@/components/task/task-row';
 import type { DetailTask } from '@/components/task/task-detail';
+import { ShortcutPill } from '@/components/shortcut-pill';
+import { useCommandPalette } from '@/hooks/use-command-palette';
 
 const TaskDetail = dynamic(
   () => import('@/components/task/task-detail').then((m) => ({ default: m.TaskDetail })),
@@ -133,6 +135,7 @@ function TasksPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const isDesktop = useBreakpoint(768);
+  const { openPalette } = useCommandPalette();
 
   // Pre-fill project from URL (context-aware from /entity/[key])
   const initialProject = searchParams.get('project') || '';
@@ -566,6 +569,10 @@ function TasksPageInner() {
                 Clear
               </button>
             )}
+            {/* ⌘K palette shortcut pill — desktop only */}
+            <div className="flex-1 hidden md:flex justify-end">
+              <ShortcutPill label="⌘K command palette" onClick={openPalette} />
+            </div>
           </div>
         )}
 

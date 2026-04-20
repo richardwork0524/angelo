@@ -7,6 +7,8 @@ import { HeroCard, TierLabel } from '@/components/hero-card';
 import { DraggableSessionRow, type DraggableSessionData } from '@/components/draggable-session-row';
 import { EntityDropTarget } from '@/components/entity-drop-target';
 import { ReattributionToast } from '@/components/reattribution-toast';
+import { ShortcutPill } from '@/components/shortcut-pill';
+import { useCommandPalette } from '@/hooks/use-command-palette';
 
 type Range = 'today' | '7d' | '30d' | 'all';
 
@@ -107,6 +109,7 @@ export default function SessionsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
+  const { openPalette } = useCommandPalette();
 
   // ── Drag / re-attribution state ──
   const [activeDragSessionId, setActiveDragSessionId] = useState<string | null>(null);
@@ -258,12 +261,14 @@ export default function SessionsPage() {
       <div className="max-w-[1280px] mx-auto px-4 md:px-8 py-5 md:py-7" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         {/* Page head */}
         <div className="flex items-center justify-between gap-4 flex-wrap">
-          <h1 className="font-semibold tracking-tight" style={{ fontSize: 'var(--t-h2)' }}>
+          <h1 className="flex items-center gap-3 font-semibold tracking-tight" style={{ fontSize: 'var(--t-h2)' }}>
             Sessions
-            <span className="ml-2 font-normal" style={{ color: 'var(--text3)', fontSize: 'var(--t-body)' }}>
+            <span className="font-normal" style={{ color: 'var(--text3)', fontSize: 'var(--t-body)' }}>
               {data ? `${data.total} total` : '—'}
               {week ? ` · ${week.total_sessions} in last 7d` : ''}
             </span>
+            {/* Desktop shortcut pills */}
+            <ShortcutPill label="⌘K Search" onClick={openPalette} />
           </h1>
           <div
             style={{

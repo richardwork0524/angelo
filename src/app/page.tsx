@@ -7,6 +7,8 @@ import { cachedFetch } from '@/lib/cache';
 import { patchHandoff } from '@/lib/mutate';
 import { StatusBadge } from '@/components/status-badge';
 import { HeroCard, TierLabel } from '@/components/hero-card';
+import { ShortcutPill } from '@/components/shortcut-pill';
+import { useHotkeys } from '@/hooks/use-hotkeys';
 import type { Handoff } from '@/lib/types';
 
 const DAILY_COST_CAP = 6;
@@ -322,6 +324,11 @@ function MountedHero({
     ? Math.round((handoff.sections_completed / handoff.sections_total) * 100)
     : 0;
 
+  // Desktop shortcut: E → open full detail
+  useHotkeys({
+    'e': () => onOpenDetail(),
+  }, [onOpenDetail]);
+
   return (
     <div
       className="relative overflow-hidden grid grid-cols-1 md:grid-cols-[1fr_auto] items-stretch md:items-center gap-4 md:gap-6 p-5 md:p-7"
@@ -364,6 +371,11 @@ function MountedHero({
             }}
           />
           Currently Working On
+          {/* Desktop shortcut pills */}
+          <span className="ml-auto flex gap-1.5">
+            <ShortcutPill label="E Open" onClick={onOpenDetail} />
+            <ShortcutPill label="⌘K Search" />
+          </span>
         </div>
 
         <div

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cachedFetch } from '@/lib/cache';
+import { useCommandPalette } from '@/hooks/use-command-palette';
 
 interface NavItem {
   key: string;
@@ -52,6 +53,7 @@ interface SidebarCounts {
 export function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
   const pathname = usePathname();
   const [counts, setCounts] = useState<SidebarCounts>({});
+  const { openPalette } = useCommandPalette();
 
   // Best-effort counts via /api/home — silently degrades if shape doesn't match
   useEffect(() => {
@@ -100,6 +102,55 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
         gap: 4,
       }}
     >
+      {/* Sidebar header with ⌘K pill — desktop only */}
+      <div
+        className="hidden md:flex items-center gap-2 mb-1"
+        style={{ padding: '0 4px 8px', borderBottom: '1px solid var(--border)' }}
+      >
+        <div
+          className="flex items-center justify-center text-white font-bold"
+          style={{
+            width: 22,
+            height: 22,
+            borderRadius: 6,
+            background: 'linear-gradient(135deg, var(--primary), var(--primary-2))',
+            fontSize: 11,
+            flexShrink: 0,
+          }}
+        >
+          A
+        </div>
+        <span style={{ fontSize: 'var(--t-sm)', fontWeight: 600, flex: 1 }}>Angelo</span>
+        <button
+          type="button"
+          onClick={openPalette}
+          title="Open command palette (⌘K)"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            padding: '2px 6px',
+            background: 'var(--card-alt)',
+            border: '1px solid var(--border)',
+            borderRadius: 4,
+            fontSize: 'var(--t-tiny)',
+            fontFamily: 'ui-monospace, monospace',
+            color: 'var(--text3)',
+            cursor: 'pointer',
+            lineHeight: 1.4,
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'var(--card-hi)';
+            e.currentTarget.style.color = 'var(--text2)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'var(--card-alt)';
+            e.currentTarget.style.color = 'var(--text3)';
+          }}
+        >
+          ⌘K
+        </button>
+      </div>
+
       {SECTIONS.map((section) => (
         <div key={section.title}>
           <div

@@ -5,7 +5,9 @@ import { usePathname } from 'next/navigation';
 import { Sidebar } from './sidebar';
 import { Topbar } from './topbar';
 import { NoteModal } from './note-modal';
+import { CommandPalette } from './command-palette';
 import { useLiveSession } from '@/hooks/use-live-session';
+import { useCommandPalette } from '@/hooks/use-command-palette';
 import { LiveRibbon } from './live-ribbon';
 import { BottomNav } from './bottom-nav';
 
@@ -13,6 +15,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [navOpen, setNavOpen] = useState(false);
   const pathname = usePathname();
   const { session } = useLiveSession();
+  const { open: paletteOpen, closePalette } = useCommandPalette();
 
   // Auto-close drawer on route change
   useEffect(() => {
@@ -90,6 +93,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </div>
       <NoteModal />
+      <CommandPalette open={paletteOpen} onClose={closePalette} />
     </div>
   );
 }
