@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { cachedFetch, invalidateCache } from '@/lib/cache';
@@ -192,7 +192,16 @@ function TasksPageInner() {
     setLoading(false);
   }, [apiUrl]);
 
-  useEffect(() => { fetchTasks(); }, [fetchTasks]);
+  // On the very first mount we bypass IDB so a hard-reload always reflects
+  // the current DB state (IDB survives reloads and can serve a stale snapshot).
+  // Subsequent re-runs of this effect (filter changes, tab refocus) use the
+  // cache normally — that's the whole point of SWR.
+  const isMountRef = useRef(true);
+  useEffect(() => {
+    const force = isMountRef.current;
+    isMountRef.current = false;
+    fetchTasks(force);
+  }, [fetchTasks]);
 
   // Re-fetch when any external mutation fires (e.g. QuickTaskModal after POST)
   useEffect(() => {
