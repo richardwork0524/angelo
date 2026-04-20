@@ -79,7 +79,7 @@ export function BottomNav() {
   const pathname = usePathname();
 
   function openQuickCapture() {
-    window.dispatchEvent(new CustomEvent('quick-note', { detail: {} }));
+    window.dispatchEvent(new CustomEvent('create-chooser', { detail: {} }));
   }
 
   return (

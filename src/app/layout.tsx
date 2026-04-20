@@ -45,7 +45,7 @@ export default function RootLayout({
           }
         `}} />
       </head>
-      <body className="min-h-full flex flex-col antialiased" style={{ fontFamily: "-apple-system, 'SF Pro Display', system-ui, sans-serif" }}>
+      <body className="flex flex-col antialiased" style={{ fontFamily: "-apple-system, 'SF Pro Display', system-ui, sans-serif" }}>
         <AppShell>{children}</AppShell>
       </body>
     </html>

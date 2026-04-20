@@ -371,8 +371,8 @@ function MountedHero({
             }}
           />
           Currently Working On
-          {/* Desktop shortcut pills */}
-          <span className="ml-auto flex gap-1.5">
+          {/* Desktop shortcut pills (hidden on mobile) */}
+          <span className="ml-auto hidden md:flex gap-1.5">
             <ShortcutPill label="E Open" onClick={onOpenDetail} />
             <ShortcutPill label="⌘K Search" />
           </span>
@@ -829,7 +829,7 @@ function DashboardHeroTask({
             gap: 6,
           }}
         >
-          → Resume session
+          → Open task
         </button>
         <Link
           href="/tasks"

@@ -102,7 +102,7 @@ export default function HandoffsPage() {
   }, [handoffs, total]);
 
   function handleAddHandoff() {
-    showToast('Create flow coming in a later phase', 'info');
+    showToast('Handoffs are generated in Claude Code (vault → Supabase)', 'info');
   }
   function handleExport() {
     const rows = [

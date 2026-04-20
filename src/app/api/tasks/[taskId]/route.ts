@@ -8,6 +8,15 @@ export async function DELETE(
   const { taskId } = await params;
 
   try {
+    // Cascade-delete subtasks first — the FK on angelo_tasks.parent_task_id
+    // is NO ACTION, so deleting a parent with subtasks would error out
+    // (and the UI saw the task "re-appear" after the first delete attempt).
+    const { error: subErr } = await supabase
+      .from("angelo_tasks")
+      .delete()
+      .eq("parent_task_id", taskId);
+    if (subErr) throw subErr;
+
     const { error } = await supabase
       .from("angelo_tasks")
       .delete()

@@ -5,6 +5,8 @@ import { usePathname } from 'next/navigation';
 import { Sidebar } from './sidebar';
 import { Topbar } from './topbar';
 import { NoteModal } from './note-modal';
+import { QuickTaskModal } from './quick-task-modal';
+import { CreateChooser } from './create-chooser';
 import { CommandPalette } from './command-palette';
 import { useLiveSession } from '@/hooks/use-live-session';
 import { useCommandPalette } from '@/hooks/use-command-palette';
@@ -93,6 +95,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </div>
       <NoteModal />
+      <QuickTaskModal />
+      <CreateChooser />
       <CommandPalette open={paletteOpen} onClose={closePalette} />
     </div>
   );

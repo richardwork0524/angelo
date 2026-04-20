@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { PreviewPopup, PopupHead, PopupStats, PopupFooter, PopupBtn } from '@/components/preview-popup';
 import { patchHandoff } from '@/lib/mutate';
@@ -22,7 +22,7 @@ const STATUS_COLORS: Record<string, { text: string; bg: string }> = {
   completed: { text: 'var(--green)', bg: 'var(--green-dim)' },
 };
 
-export function HandoffPopup({ handoff, open, onClose, onUpdate }: {
+export function HandoffPopup({ handoff: handoffProp, open, onClose, onUpdate }: {
   handoff: Handoff | null;
   open: boolean;
   onClose: () => void;
@@ -30,8 +30,12 @@ export function HandoffPopup({ handoff, open, onClose, onUpdate }: {
 }) {
   const [copyLabel, setCopyLabel] = useState('Copy');
   const [acting, setActing] = useState(false);
+  const [localHandoff, setLocalHandoff] = useState<Handoff | null>(handoffProp);
 
-  if (!handoff) return null;
+  useEffect(() => { setLocalHandoff(handoffProp); }, [handoffProp]);
+
+  if (!localHandoff) return null;
+  const handoff = localHandoff;
 
   const sc = STATUS_COLORS[handoff.status] || STATUS_COLORS.open;
   const pct = handoff.sections_total > 0
@@ -41,7 +45,7 @@ export function HandoffPopup({ handoff, open, onClose, onUpdate }: {
   function handleAction(newStatus: string) {
     if (acting) return;
     setActing(true);
-    patchHandoff(handoff!.id, newStatus, {
+    patchHandoff(localHandoff!.id, newStatus, {
       onSuccess: () => { setActing(false); onUpdate?.(); onClose(); },
       onError: () => { setActing(false); },
     });
@@ -49,10 +53,17 @@ export function HandoffPopup({ handoff, open, onClose, onUpdate }: {
 
   function handleToggleMount() {
     if (acting) return;
+    const next = !localHandoff!.is_mounted;
+    // Optimistic local flip so the popup reflects the new state immediately
+    setLocalHandoff((h) => (h ? { ...h, is_mounted: next } : h));
     setActing(true);
-    patchHandoff(handoff!.id, { is_mounted: !handoff!.is_mounted }, {
-      onSuccess: () => { setActing(false); onUpdate?.(); onClose(); },
-      onError: () => { setActing(false); },
+    patchHandoff(localHandoff!.id, { is_mounted: next }, {
+      onSuccess: () => { setActing(false); onUpdate?.(); },
+      onError: () => {
+        setActing(false);
+        // Revert on failure
+        setLocalHandoff((h) => (h ? { ...h, is_mounted: !next } : h));
+      },
     });
   }
 

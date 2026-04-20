@@ -187,10 +187,19 @@ html.dark, html[data-theme="dark"] {
 
 html, body {
   overscroll-behavior: none;
-  overflow-x: hidden;
+  overflow: hidden;
   height: 100%;
+  position: fixed;
+  width: 100%;
+  top: 0;
+  left: 0;
 }
-html { overscroll-behavior-y: contain; }
+html { overscroll-behavior-y: none; }
+
+main, [data-scroll-container] {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
 
 body {
   background: var(--bg);

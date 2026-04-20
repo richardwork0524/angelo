@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
+import Link from 'next/link';
 import { EntityCard, EtypeChip } from '@/components/entity-card';
 import { cachedFetch } from '@/lib/cache';
 import type { EntitySummary, EntityType } from '@/lib/types';
@@ -56,6 +57,21 @@ export default function EntitiesPage() {
       return true;
     });
   }, [entities, filter, search]);
+
+  // Top-down hierarchy (bug 4): Strategist/Meta hero → Companies → Development (apps + games + shells)
+  const hero = useMemo(() => filtered.find((e) => e.entity_type === 'meta') || null, [filtered]);
+  const companyRow = useMemo(
+    () => filtered.filter((e) => e.entity_type === 'company'),
+    [filtered]
+  );
+  const devRow = useMemo(
+    () => filtered.filter((e) => e.entity_type === 'app' || e.entity_type === 'game' || e.entity_type === 'shell'),
+    [filtered]
+  );
+  const otherMeta = useMemo(
+    () => filtered.filter((e) => e.entity_type === 'meta' && (!hero || e.child_key !== hero.child_key)),
+    [filtered, hero]
+  );
 
   const typesWithRows = (Object.keys(byType) as EntityType[]).filter((t) => byType[t] > 0).length;
 
@@ -132,7 +148,7 @@ export default function EntitiesPage() {
           >
             {entities.length === 0 ? 'No entities yet' : 'No entities match the current filters'}
           </div>
-        ) : (
+        ) : filter !== 'all' || search.trim() ? (
           <div
             style={{
               display: 'grid',
@@ -144,6 +160,69 @@ export default function EntitiesPage() {
             {filtered.map((e) => (
               <EntityCard key={e.child_key} entity={e} />
             ))}
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            {hero && (
+              <div>
+                <TierHead label="Strategist" accent="var(--vault)" hint={hero.display_name} />
+                <HeroEntityCard entity={hero} />
+              </div>
+            )}
+
+            {companyRow.length > 0 && (
+              <div>
+                <TierHead label="Companies" accent="var(--success)" hint={`${companyRow.length} org${companyRow.length === 1 ? '' : 's'}`} />
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+                    gap: 12,
+                    alignContent: 'start',
+                  }}
+                >
+                  {companyRow.map((e) => (
+                    <EntityCard key={e.child_key} entity={e} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {devRow.length > 0 && (
+              <div>
+                <TierHead label="Development" accent="var(--primary-2)" hint={`${devRow.length} project${devRow.length === 1 ? '' : 's'}`} />
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+                    gap: 12,
+                    alignContent: 'start',
+                  }}
+                >
+                  {devRow.map((e) => (
+                    <EntityCard key={e.child_key} entity={e} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {otherMeta.length > 0 && (
+              <div>
+                <TierHead label="Meta" accent="var(--vault)" hint={`${otherMeta.length} system${otherMeta.length === 1 ? '' : 's'}`} />
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+                    gap: 12,
+                    alignContent: 'start',
+                  }}
+                >
+                  {otherMeta.map((e) => (
+                    <EntityCard key={e.child_key} entity={e} />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -157,6 +236,165 @@ export default function EntitiesPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function TierHead({ label, accent, hint }: { label: string; accent: string; hint?: string }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 10,
+      }}
+    >
+      <span
+        style={{
+          width: 3,
+          height: 14,
+          borderRadius: 2,
+          background: accent,
+        }}
+      />
+      <span
+        style={{
+          fontSize: 11,
+          fontWeight: 700,
+          letterSpacing: '.1em',
+          textTransform: 'uppercase',
+          color: accent,
+        }}
+      >
+        {label}
+      </span>
+      {hint && (
+        <span style={{ fontSize: 'var(--t-tiny)', color: 'var(--text3)', fontWeight: 500 }}>
+          · {hint}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function HeroEntityCard({ entity }: { entity: EntitySummary }) {
+  const icon = (entity.display_name || entity.child_key).trim().charAt(0).toUpperCase();
+  return (
+    <Link
+      href={`/entity/${encodeURIComponent(entity.child_key)}`}
+      className="transition-all hover:-translate-y-[1px]"
+      style={{
+        display: 'block',
+        background: 'linear-gradient(135deg, var(--vault-dim) 0%, rgba(139,92,246,.02) 60%), var(--card)',
+        border: '1px solid var(--vault)',
+        borderRadius: 'var(--r-lg)',
+        padding: '20px 22px',
+        textDecoration: 'none',
+        color: 'inherit',
+        boxShadow: 'var(--sh)',
+        position: 'relative',
+        overflow: 'hidden',
+      }}
+    >
+      <span
+        aria-hidden
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: 4,
+          height: '100%',
+          background: 'linear-gradient(180deg, var(--vault), var(--primary-2))',
+        }}
+      />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        <div
+          style={{
+            width: 56,
+            height: 56,
+            borderRadius: 14,
+            background: 'var(--vault-dim)',
+            color: 'var(--vault)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 26,
+            fontWeight: 700,
+            flexShrink: 0,
+          }}
+        >
+          {icon}
+        </div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: '.1em',
+              textTransform: 'uppercase',
+              color: 'var(--vault)',
+              marginBottom: 4,
+            }}
+          >
+            ● Strategist · top of hierarchy
+          </div>
+          <div
+            style={{
+              fontSize: 'var(--t-h1)',
+              fontWeight: 600,
+              letterSpacing: '-.01em',
+              color: 'var(--text)',
+              marginBottom: 4,
+            }}
+          >
+            {entity.display_name}
+          </div>
+          {entity.brief && (
+            <div
+              style={{
+                fontSize: 'var(--t-sm)',
+                color: 'var(--text2)',
+                lineHeight: 1.5,
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+              }}
+            >
+              {entity.brief}
+            </div>
+          )}
+          <div
+            style={{
+              display: 'flex',
+              gap: 14,
+              marginTop: 10,
+              fontSize: 'var(--t-tiny)',
+              color: 'var(--text3)',
+              flexWrap: 'wrap',
+            }}
+          >
+            <span>
+              <span style={{ color: 'var(--text)', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                {entity.children_count}
+              </span>{' '}
+              systems
+            </span>
+            <span>
+              <span style={{ color: 'var(--text)', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                {entity.tasks_open}
+              </span>{' '}
+              open tasks
+            </span>
+            {entity.current_version && (
+              <span style={{ fontFamily: 'ui-monospace, monospace' }}>
+                {entity.current_version}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    </Link>
   );
 }
 

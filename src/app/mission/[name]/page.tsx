@@ -224,8 +224,32 @@ export default function MissionDetailPage() {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-            <GhostButton disabled>＋ Note</GhostButton>
-            <PrimaryButton disabled>＋ Task</PrimaryButton>
+            <GhostButton
+              onClick={() =>
+                window.dispatchEvent(new CustomEvent('quick-note', {
+                  detail: {
+                    project_key: primaryProject,
+                    mission: missionName,
+                    attach_hint: missionName,
+                  },
+                }))
+              }
+            >
+              ＋ Note
+            </GhostButton>
+            <PrimaryButton
+              onClick={() =>
+                window.dispatchEvent(new CustomEvent('quick-task', {
+                  detail: {
+                    project_key: primaryProject,
+                    mission: missionName,
+                    attach_hint: missionName,
+                  },
+                }))
+              }
+            >
+              ＋ Task
+            </PrimaryButton>
           </div>
         </div>
 
@@ -631,10 +655,11 @@ function KvRow({ k, v, accent }: { k: string; v: React.ReactNode; accent?: 'dang
   );
 }
 
-function GhostButton({ children, disabled }: { children: React.ReactNode; disabled?: boolean }) {
+function GhostButton({ children, disabled, onClick }: { children: React.ReactNode; disabled?: boolean; onClick?: () => void }) {
   return (
     <button
       disabled={disabled}
+      onClick={onClick}
       style={{
         padding: '8px 12px',
         background: 'var(--card)',
@@ -645,17 +670,17 @@ function GhostButton({ children, disabled }: { children: React.ReactNode; disabl
         cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.5 : 1,
       }}
-      title={disabled ? 'Coming in a later phase' : undefined}
     >
       {children}
     </button>
   );
 }
 
-function PrimaryButton({ children, disabled }: { children: React.ReactNode; disabled?: boolean }) {
+function PrimaryButton({ children, disabled, onClick }: { children: React.ReactNode; disabled?: boolean; onClick?: () => void }) {
   return (
     <button
       disabled={disabled}
+      onClick={onClick}
       style={{
         padding: '8px 12px',
         background: 'var(--primary)',
@@ -667,7 +692,6 @@ function PrimaryButton({ children, disabled }: { children: React.ReactNode; disa
         cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.7 : 1,
       }}
-      title={disabled ? 'Coming in a later phase' : undefined}
     >
       {children}
     </button>
