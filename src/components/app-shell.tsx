@@ -5,10 +5,13 @@ import { usePathname } from 'next/navigation';
 import { Sidebar } from './sidebar';
 import { Topbar } from './topbar';
 import { NoteModal } from './note-modal';
+import { useLiveSession } from '@/hooks/use-live-session';
+import { LiveRibbon } from './live-ribbon';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [navOpen, setNavOpen] = useState(false);
   const pathname = usePathname();
+  const { session } = useLiveSession();
 
   // Auto-close drawer on route change
   useEffect(() => {
@@ -77,9 +80,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </Suspense>
         </div>
 
-        <main className="overflow-y-auto min-h-0" style={{ background: 'var(--bg)' }}>
-          {children}
-        </main>
+        <div className="flex flex-col flex-1 min-h-0" style={{ overflow: 'hidden' }}>
+          <LiveRibbon session={session} />
+          <main className="overflow-y-auto flex-1 min-h-0" style={{ background: 'var(--bg)' }}>
+            {children}
+          </main>
+        </div>
       </div>
       <NoteModal />
     </div>
