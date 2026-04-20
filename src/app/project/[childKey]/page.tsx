@@ -15,6 +15,7 @@ import { SessionLogList } from "@/components/session-log-list";
 import { type DetailTask } from "@/components/task/task-detail";
 import { Fab } from "@/components/fab";
 import { IdBadge } from "@/components/id-badge";
+import { HeroCard, TierLabel } from "@/components/hero-card";
 import { useBreakpoint } from "@/hooks/useBreakpoint";
 import { cachedFetch, invalidateCache } from "@/lib/cache";
 import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh";
@@ -110,6 +111,8 @@ interface ProjectDetail {
   session_logs: SessionLog[];
   modules: ModuleData[];
   deployments: DeploymentRow[];
+  sessions_7d_count: number;
+  cost_7d_usd: number;
 }
 
 interface NoteItem {
@@ -426,46 +429,18 @@ export default function ProjectDetailPage() {
           <EmptyState message="Project not found." />
         ) : project ? (
           <>
-            {/* ID + vault path strip — pain #4 (IDs visible everywhere) */}
-            <div className="px-4 pt-3 flex items-center gap-1.5 flex-wrap">
-              <IdBadge value={project.child_key} label="project_key" kind="key" />
-              {project.current_version && <IdBadge value={project.current_version} label="version" kind="code" />}
-              {project.build_phase && (
-                <span className="text-[9px] font-bold uppercase tracking-[0.05em] px-1.5 py-[1px] rounded-[4px] bg-[var(--purple-dim)] text-[var(--purple)]">
-                  {project.build_phase}
-                </span>
-              )}
-              <span className="text-[10px] text-[var(--text3)]">entity</span>
-            </div>
-
-            {/* Detailed project header card */}
+            {/* HERO — project state block */}
             <div className="px-4 pt-3">
-              <ProjectCard
-                project={{
-                  child_key: project.child_key,
-                  display_name: project.display_name,
-                  status: project.status || undefined,
-                  build_phase: project.build_phase || undefined,
-                  current_version: project.current_version,
-                  brief: project.brief,
-                  next_action: project.next_action,
-                  last_session_date: project.last_session_date,
-                  surface: project.surface,
-                  is_leaf: true,
-                  task_counts: {
-                    this_week: project.tasks.this_week.length,
-                    this_month: project.tasks.this_month.length,
-                    parked: project.tasks.parked.length,
-                  },
-                  children_task_total: 0,
-                  descendant_task_total: 0,
-                  completed_count: totalDone,
-                }}
-                variant="detailed"
-              />
+              <TierLabel>HERO · STATE</TierLabel>
+              <ProjectHeroCard project={project} totalOpen={totalOpen} />
             </div>
 
-            {/* Project modules (context-specific sections) */}
+            {/* SUB — project modules */}
+            {(project.modules?.length > 0 || project.deployments?.length > 0) && (
+              <div className="px-4 pt-3">
+                <TierLabel>SUB · PROJECT MODULES</TierLabel>
+              </div>
+            )}
             {(project.modules?.length > 0 || project.deployments?.length > 0) && (
               <ProjectModules modules={project.modules || []} deployments={project.deployments || []} />
             )}
@@ -551,8 +526,13 @@ export default function ProjectDetailPage() {
               </div>
             )}
 
-            {/* Tab bar: Tasks / Notes / Timeline */}
+            {/* TERTIARY — tasks / notes / timeline */}
             <div className="px-4 pt-3">
+              <TierLabel>TERTIARY · TASKS &amp; HISTORY</TierLabel>
+            </div>
+
+            {/* Tab bar: Tasks / Notes / Timeline */}
+            <div className="px-4 pt-0">
               <div className="flex gap-1 border-b border-[var(--border)]">
                 {([
                   { key: 'tasks' as const, label: `Tasks (${totalOpen})` },
@@ -1126,6 +1106,130 @@ function BucketMoveSheet({
         </button>
       </div>
     </>
+  );
+}
+
+/* ── Project Hero Card ── */
+
+const STATUS_HEX: Record<string, string> = {
+  ACTIVE: '#10B981',
+  DEPLOYED: '#10B981',
+  BUILDING: '#6366F1',
+  PLANNING: '#A855F7',
+  TESTING: '#F59E0B',
+  BLOCKED: '#EF4444',
+  ARCHIVED: '#6B7280',
+};
+
+function ProjectHeroCard({ project, totalOpen }: {
+  project: {
+    display_name: string;
+    status: string | null;
+    build_phase: string | null;
+    current_version: string | null;
+    surface: string | null;
+    next_action: string | null;
+    brief: string | null;
+    sessions_7d_count: number;
+    cost_7d_usd: number;
+    child_key: string;
+    tasks: { this_week: unknown[]; this_month: unknown[]; parked: unknown[]; completed: unknown[] };
+  };
+  totalOpen: number;
+}) {
+  const statusHex = STATUS_HEX[project.status || ''] ?? '#6366F1';
+  const blockers = [
+    ...(project.tasks?.this_week || []),
+    ...(project.tasks?.this_month || []),
+    ...(project.tasks?.parked || []),
+  ].filter((t: unknown) => (t as { priority?: string; completed?: boolean }).priority === 'P0' && !(t as { completed?: boolean }).completed).length;
+
+  const stats = [
+    { label: 'OPEN TASKS', value: String(totalOpen), color: 'var(--text)' },
+    { label: 'BLOCKERS',   value: String(blockers),  color: blockers > 0 ? 'var(--danger)' : 'var(--text)' },
+    { label: 'SESSIONS 7D', value: String(project.sessions_7d_count ?? 0), color: 'var(--text)' },
+    { label: 'COST 7D',    value: `$${(project.cost_7d_usd ?? 0).toFixed(2)}`, color: 'var(--success)' },
+  ];
+
+  return (
+    <div
+      style={{
+        background: 'var(--card)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--r)',
+        overflow: 'hidden',
+        position: 'relative',
+      }}
+    >
+      {/* Left accent stripe — status color */}
+      <span
+        style={{
+          position: 'absolute',
+          left: 0, top: 0, bottom: 0,
+          width: 4,
+          background: statusHex,
+          borderRadius: '0 2px 2px 0',
+        }}
+      />
+      <div style={{ padding: '18px 20px 0 20px' }}>
+        {/* Status row */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+          {project.status && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 999, fontSize: 11, fontWeight: 700, letterSpacing: '0.04em', background: `${statusHex}22`, color: statusHex, border: `1px solid ${statusHex}55` }}>
+              {project.status}
+            </span>
+          )}
+          {project.current_version && (
+            <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12, color: 'var(--text2)' }}>
+              {project.current_version}
+            </span>
+          )}
+          {project.surface && (
+            <span style={{ fontSize: 12, color: 'var(--text3)' }}>· {project.surface}</span>
+          )}
+          {project.build_phase && (
+            <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 999, background: 'var(--primary-dim)', color: 'var(--primary-2)' }}>
+              {project.build_phase}
+            </span>
+          )}
+        </div>
+
+        {/* Project name */}
+        <div style={{ fontSize: 'var(--t-h1)', fontWeight: 700, letterSpacing: '-0.01em', color: 'var(--text)', marginBottom: 8 }}>
+          {project.display_name}
+        </div>
+
+        {/* Mission / next_action */}
+        {(project.next_action || project.brief) && (
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '10px 12px', background: 'var(--card-alt)', borderRadius: 'var(--r-sm)', marginBottom: 4 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--vault)', textTransform: 'uppercase', letterSpacing: '0.05em', flexShrink: 0, paddingTop: 1 }}>MISSION</span>
+            <span style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.4 }}>
+              {project.next_action || project.brief}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* 4-cell stats strip */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', borderTop: '1px solid var(--border)', marginTop: 14 }}>
+        {stats.map((s, i) => (
+          <div
+            key={s.label}
+            style={{
+              padding: '12px 16px',
+              borderRight: i < 3 ? '1px solid var(--border)' : 'none',
+            }}
+          >
+            <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.05em', color: 'var(--text3)', textTransform: 'uppercase', marginBottom: 3 }}>
+              {s.label}
+            </div>
+            <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 20, fontWeight: 700, color: s.color, lineHeight: 1 }}>
+              {s.value}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
