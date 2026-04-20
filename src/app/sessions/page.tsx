@@ -2,8 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { cachedFetch } from '@/lib/cache';
+import { cachedFetch, invalidateCache } from '@/lib/cache';
 import { HeroCard, TierLabel } from '@/components/hero-card';
+import { DraggableSessionRow, type DraggableSessionData } from '@/components/draggable-session-row';
+import { EntityDropTarget } from '@/components/entity-drop-target';
+import { ReattributionToast } from '@/components/reattribution-toast';
 
 type Range = 'today' | '7d' | '30d' | 'all';
 
@@ -85,12 +88,35 @@ function fmtCost(n: number): string {
   return `$${n.toFixed(2)}`;
 }
 
+interface EntityOption {
+  child_key: string;
+  display_name: string;
+  entity_type: string | null;
+  status: string | null;
+}
+
+interface UndoState {
+  sessionId: string;
+  newProjectKey: string;
+  previousProjectKey: string | null;
+}
+
 export default function SessionsPage() {
   const [range, setRange] = useState<Range>('7d');
   const [data, setData] = useState<SessionsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
+
+  // ── Drag / re-attribution state ──
+  const [activeDragSessionId, setActiveDragSessionId] = useState<string | null>(null);
+  const [entities, setEntities] = useState<EntityOption[]>([]);
+  const [entitiesLoaded, setEntitiesLoaded] = useState(false);
+  const [undoState, setUndoState] = useState<UndoState | null>(null);
+  // optimistic overrides: sessionId → project_key
+  const [optimisticKeys, setOptimisticKeys] = useState<Record<string, string>>({});
+  // tracks which session IDs have been merged away (remove from list)
+  const [mergedAway, setMergedAway] = useState<Set<string>>(new Set());
 
   const fetchSessions = useCallback(async (r: Range) => {
     setLoading(true);
@@ -107,17 +133,89 @@ export default function SessionsPage() {
     fetchSessions(range);
   }, [range, fetchSessions]);
 
+  // Load entities once for drop targets
+  useEffect(() => {
+    if (entitiesLoaded) return;
+    (async () => {
+      try {
+        const res = await fetch('/api/projects');
+        if (res.ok) {
+          const d = await res.json();
+          setEntities((d.projects || d || []) as EntityOption[]);
+        }
+      } catch { /* silent */ }
+      setEntitiesLoaded(true);
+    })();
+  }, [entitiesLoaded]);
+
+  // ── Re-attribute handler ──
+  const handleReattribute = useCallback(async (
+    sessionId: string,
+    newProjectKey: string,
+  ): Promise<{ previousProjectKey: string | null }> => {
+    const res = await fetch(`/api/sessions/${sessionId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project_key: newProjectKey }),
+    });
+    const result = await res.json();
+    if (result.success) {
+      const prev = result.previous_project_key ?? null;
+      // Optimistic update
+      setOptimisticKeys((prev2) => ({ ...prev2, [sessionId]: newProjectKey }));
+      // Show undo toast
+      setUndoState({ sessionId, newProjectKey, previousProjectKey: prev });
+      invalidateCache('sessions');
+      return { previousProjectKey: prev };
+    }
+    // Surface error via console; parent toast omitted to keep scope tight
+    console.error('reattribute failed:', result.error);
+    return { previousProjectKey: null };
+  }, []);
+
+  // ── Merge handler ──
+  const handleMerge = useCallback(async (sourceId: string, targetId: string): Promise<void> => {
+    const res = await fetch(`/api/sessions/${sourceId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ merge_into_session_id: targetId }),
+    });
+    const result = await res.json();
+    if (result.success) {
+      setMergedAway((prev) => new Set(prev).add(sourceId));
+      invalidateCache('sessions');
+    } else {
+      console.error('merge failed:', result.error);
+    }
+  }, []);
+
+  // ── Undo handler ──
+  const handleUndo = useCallback(async (sessionId: string, previousProjectKey: string | null) => {
+    if (!previousProjectKey) return;
+    const res = await fetch(`/api/sessions/${sessionId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project_key: previousProjectKey }),
+    });
+    const result = await res.json();
+    if (result.success) {
+      setOptimisticKeys((prev) => ({ ...prev, [sessionId]: previousProjectKey }));
+      invalidateCache('sessions');
+    }
+  }, []);
+
   const sessions = data?.sessions || [];
   const week = data?.stats.week;
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return sessions;
-    return sessions.filter((s) => {
+    const visible = sessions.filter((s) => !mergedAway.has(s.id));
+    if (!q) return visible;
+    return visible.filter((s) => {
       const hay = [s.title, s.project_key, s.mission, s.summary, s.session_code].filter(Boolean).join(' ').toLowerCase();
       return hay.includes(q);
     });
-  }, [sessions, search]);
+  }, [sessions, search, mergedAway]);
 
   const maxDailyTokens = useMemo(() => Math.max(1, ...(week?.daily.map((d) => d.tokens) || [1])), [week]);
   const maxDailyCost = useMemo(() => Math.max(0.01, ...(week?.daily.map((d) => d.cost) || [0.01])), [week]);
@@ -353,9 +451,81 @@ export default function SessionsPage() {
           </div>
         )}
 
+        {/* Entity drop target panel — slides up from bottom during drag on mobile */}
+        {activeDragSessionId && entities.length > 0 && (
+          <>
+            {/* Backdrop hint text */}
+            <div
+              style={{
+                position: 'fixed',
+                bottom: 80,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                zIndex: 30,
+                fontSize: 12,
+                color: 'var(--text3)',
+                pointerEvents: 'none',
+              }}
+            >
+              Drop on an entity below to re-assign
+            </div>
+            {/* Mobile entity drawer overlay */}
+            <div
+              style={{
+                position: 'fixed',
+                bottom: 0,
+                left: 0,
+                right: 0,
+                zIndex: 35,
+                background: 'var(--surface)',
+                borderTop: '1px solid var(--border)',
+                padding: '12px 16px 24px',
+                display: 'flex',
+                gap: 8,
+                overflowX: 'auto',
+                boxShadow: '0 -8px 32px rgba(0,0,0,0.3)',
+              }}
+            >
+              {entities
+                .filter((e) => e.status !== 'ARCHIVED')
+                .map((e) => (
+                  <EntityDropTarget
+                    key={e.child_key}
+                    entityKey={e.child_key}
+                    displayName={e.display_name}
+                    isArchived={false}
+                    isDragActive={!!activeDragSessionId}
+                    onDrop={(entityKey) => {
+                      if (activeDragSessionId) {
+                        handleReattribute(activeDragSessionId, entityKey);
+                        setActiveDragSessionId(null);
+                      }
+                    }}
+                  >
+                    <div
+                      style={{
+                        padding: '8px 12px',
+                        background: 'var(--card)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 8,
+                        fontSize: 12,
+                        color: 'var(--text)',
+                        whiteSpace: 'nowrap',
+                        cursor: 'copy',
+                        userSelect: 'none',
+                      }}
+                    >
+                      {e.display_name}
+                    </div>
+                  </EntityDropTarget>
+                ))}
+            </div>
+          </>
+        )}
+
         {/* Stats strip */}
         {data && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: activeDragSessionId ? 120 : 0 }}>
             <StatCell k={`Sessions (${range})`} v={String(data.stats.range_total)} />
             <StatCell k="7d sessions" v={String(week?.total_sessions ?? 0)} tone="primary" />
             <StatCell k="7d tokens" v={fmtTokens(week?.total_tokens ?? 0)} tone="primary" />
@@ -363,6 +533,17 @@ export default function SessionsPage() {
           </div>
         )}
       </div>
+
+      {/* Undo toast */}
+      {undoState && (
+        <ReattributionToast
+          sessionId={undoState.sessionId}
+          newProjectKey={undoState.newProjectKey}
+          previousProjectKey={undoState.previousProjectKey}
+          onUndo={handleUndo}
+          onDismiss={() => setUndoState(null)}
+        />
+      )}
     </div>
   );
 }
