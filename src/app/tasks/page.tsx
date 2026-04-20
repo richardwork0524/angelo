@@ -194,6 +194,13 @@ function TasksPageInner() {
 
   useEffect(() => { fetchTasks(); }, [fetchTasks]);
 
+  // Re-fetch when any external mutation fires (e.g. QuickTaskModal after POST)
+  useEffect(() => {
+    function onTasksChanged() { fetchTasks(true); }
+    window.addEventListener('tasks-changed', onTasksChanged);
+    return () => window.removeEventListener('tasks-changed', onTasksChanged);
+  }, [fetchTasks]);
+
   // Sync URL with project filter (so deep-linking works and /entity/X → /tasks?project=X persists)
   useEffect(() => {
     const current = searchParams.get('project') || '';
