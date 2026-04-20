@@ -119,8 +119,13 @@ export async function GET(
     }
     const allKeys = is_leaf ? [childKey] : getDescendantKeys(childKey);
 
-    // Parallel: tasks + session logs + modules + deployments
-    const [tasksResult, sessionsResult, modulesResult, deploymentsResult] = await Promise.all([
+    // Compute 7-day window
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const sevenDaysAgoIso = sevenDaysAgo.toISOString().slice(0, 10);
+
+    // Parallel: tasks + session logs + modules + deployments + 7d stats
+    const [tasksResult, sessionsResult, modulesResult, deploymentsResult, stats7dResult] = await Promise.all([
       supabase
         .from("angelo_tasks")
         .select("*")
@@ -142,9 +147,19 @@ export async function GET(
         .from("angelo_deployments")
         .select("id, project_key, module_code, module_slug, git_repo, vercel_project, custom_domain, vault_path, last_deploy")
         .in("project_key", allKeys),
+      supabase
+        .from("angelo_session_logs")
+        .select("id, cost_usd")
+        .in("project_key", allKeys)
+        .gte("session_date", sevenDaysAgoIso),
     ]);
 
     if (tasksResult.error) throw tasksResult.error;
+
+    // Compute 7d stats from session query
+    const sessions7d = stats7dResult.data || [];
+    const sessions_7d_count = sessions7d.length;
+    const cost_7d_usd = sessions7d.reduce((sum, s) => sum + (Number(s.cost_usd) || 0), 0);
 
     const allTasks = (tasksResult.data || []) as TaskRow[];
     const nested = nestTasks(allTasks);
@@ -206,6 +221,8 @@ export async function GET(
       session_logs: sessionsResult.data || [],
       modules: modulesResult.data || [],
       deployments: deploymentsResult.data || [],
+      sessions_7d_count,
+      cost_7d_usd,
     });
   } catch (err) {
     console.error("Project detail error:", err);

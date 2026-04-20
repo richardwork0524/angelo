@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { cachedFetch } from '@/lib/cache';
 import { patchHandoff } from '@/lib/mutate';
 import { StatusBadge } from '@/components/status-badge';
+import { HeroCard, TierLabel } from '@/components/hero-card';
 import type { Handoff } from '@/lib/types';
 
 const DAILY_COST_CAP = 6;
@@ -23,6 +24,20 @@ interface HomeData {
   recent_handoffs: Handoff[];
   stats_today: Stats;
   stats_yesterday: Stats;
+}
+
+interface TopTask {
+  id: string;
+  text: string;
+  priority: string | null;
+  project_key: string;
+  bucket: string;
+  updated_at: string;
+  completed: boolean;
+}
+
+interface TasksApiResponse {
+  tasks: TopTask[];
 }
 
 function fmtDate(): string {
@@ -72,6 +87,7 @@ export default function HomePage() {
   const router = useRouter();
   const [data, setData] = useState<HomeData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [topTask, setTopTask] = useState<TopTask | null>(null);
 
   const fetchHome = useCallback(async () => {
     try {
@@ -83,7 +99,25 @@ export default function HomePage() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { fetchHome(); }, [fetchHome]);
+  // Fetch top open task for hero card
+  const fetchTopTask = useCallback(async () => {
+    try {
+      const d = await cachedFetch<TasksApiResponse>('/api/tasks?completed=false&limit=5', 30000);
+      const tasks = d?.tasks || [];
+      // Pick top: P0 in now bucket first, then any P0, then P1, then any open
+      const hero =
+        tasks.find((t) => !t.completed && t.priority === 'P0' && t.bucket === 'now') ||
+        tasks.find((t) => !t.completed && t.priority === 'P0') ||
+        tasks.find((t) => !t.completed && t.priority === 'P1') ||
+        tasks.find((t) => !t.completed) ||
+        null;
+      setTopTask(hero);
+    } catch {
+      setTopTask(null);
+    }
+  }, []);
+
+  useEffect(() => { fetchHome(); fetchTopTask(); }, [fetchHome, fetchTopTask]);
 
   const mounted = data?.mounted_handoffs?.[0] || null;
   const recent = (data?.recent_handoffs || []).filter((h) => h.id !== mounted?.id).slice(0, 4);
@@ -175,24 +209,42 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Hero — mounted handoff focus */}
-        {mounted ? (
-          <MountedHero handoff={mounted} onUnmount={handleUnmount} onOpenDetail={() => router.push('/handoffs')} />
+        {/* HERO — top priority task */}
+        <TierLabel>HERO · WHAT&apos;S NEXT</TierLabel>
+        {topTask ? (
+          <DashboardHeroTask task={topTask} onOpenTasks={() => router.push('/tasks')} />
         ) : (
-          <EmptyHero onBrowse={() => router.push('/handoffs')} />
+          <HeroCard accentHex="#6366F1">
+            <div style={{ color: 'var(--text3)', fontSize: 'var(--t-sm)', textAlign: 'center', padding: '8px 0' }}>
+              No open tasks — <button onClick={() => router.push('/tasks')} style={{ color: 'var(--primary-2)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 'inherit', fontWeight: 500 }}>add one →</button>
+            </div>
+          </HeroCard>
         )}
 
-        {/* Sub-grid: Recent Handoffs + Today's Pulse */}
+        {/* SUB — mounted handoff focus */}
+        <div className="mt-4">
+          <TierLabel>SUB · CURRENT HANDOFF</TierLabel>
+          {mounted ? (
+            <MountedHero handoff={mounted} onUnmount={handleUnmount} onOpenDetail={() => router.push('/handoffs')} />
+          ) : (
+            <EmptyHero onBrowse={() => router.push('/handoffs')} />
+          )}
+        </div>
+
+        {/* TERTIARY — Recent Handoffs + Today's Pulse */}
         <div className="grid gap-6 mt-6 grid-cols-1 md:[grid-template-columns:minmax(0,1.5fr)_minmax(280px,1fr)]">
           {/* Recent Handoffs */}
           <section>
             <div className="flex items-center justify-between mb-3">
-              <h2 className="font-semibold" style={{ fontSize: 'var(--t-h3)' }}>
-                Recent Handoffs
-                <span className="ml-2 font-normal" style={{ color: 'var(--text3)', fontSize: 'var(--t-sm)' }}>
-                  · last 7 days
-                </span>
-              </h2>
+              <div>
+                <TierLabel>TERTIARY · RECENT HANDOFFS</TierLabel>
+                <h2 className="font-semibold" style={{ fontSize: 'var(--t-h3)' }}>
+                  Recent Handoffs
+                  <span className="ml-2 font-normal" style={{ color: 'var(--text3)', fontSize: 'var(--t-sm)' }}>
+                    · last 7 days
+                  </span>
+                </h2>
+              </div>
               <Link
                 href="/handoffs"
                 className="transition-colors hover:opacity-80"
@@ -226,6 +278,7 @@ export default function HomePage() {
 
           {/* Today's Pulse */}
           <section>
+            <TierLabel>TERTIARY · TODAY&apos;S PULSE</TierLabel>
             <h2 className="font-semibold mb-3" style={{ fontSize: 'var(--t-h3)' }}>Today&apos;s Pulse</h2>
             <div className="flex flex-col gap-2.5">
               <PulseStat
@@ -654,5 +707,138 @@ function PulseStat({
         <span>{delta.label}</span>
       </div>
     </div>
+  );
+}
+
+/* ── Dashboard Hero Task Card ── */
+
+const PRI_HEX: Record<string, string> = {
+  P0: '#EF4444',
+  P1: '#F59E0B',
+  P2: '#6366F1',
+};
+
+function DashboardHeroTask({
+  task,
+  onOpenTasks,
+}: {
+  task: TopTask;
+  onOpenTasks: () => void;
+}) {
+  const accentHex = PRI_HEX[task.priority || 'P2'] ?? '#6366F1';
+  const priLabel = task.priority || 'P2';
+  const priColor = accentHex;
+  const ageMs = Date.now() - new Date(task.updated_at).getTime();
+  const ageH = Math.floor(ageMs / 3_600_000);
+  const ageLabel = ageH < 1 ? 'just now' : ageH < 24 ? `${ageH}h old` : `${Math.floor(ageH / 24)}d old`;
+
+  return (
+    <HeroCard accentHex={accentHex}>
+      {/* Header row */}
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        {/* Priority chip */}
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 5,
+            padding: '3px 9px 3px 5px',
+            borderRadius: 6,
+            background: 'var(--card)',
+            border: `1px solid var(--border)`,
+            fontSize: 11,
+            fontWeight: 700,
+            color: priColor,
+          }}
+        >
+          <span style={{ width: 4, height: 14, borderRadius: 2, background: priColor, display: 'inline-block' }} />
+          {priLabel}
+        </span>
+        {/* Project chip */}
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 5,
+            padding: '3px 9px',
+            borderRadius: 6,
+            background: 'var(--card)',
+            border: '1px solid var(--border)',
+            fontSize: 11,
+            fontWeight: 600,
+            color: 'var(--text2)',
+          }}
+        >
+          <span style={{ width: 6, height: 6, borderRadius: 2, background: 'var(--primary)', display: 'inline-block' }} />
+          {task.project_key}
+        </span>
+        <span
+          style={{
+            marginLeft: 'auto',
+            fontFamily: 'ui-monospace, monospace',
+            fontSize: 11,
+            color: 'var(--text3)',
+          }}
+        >
+          {ageLabel}
+        </span>
+      </div>
+
+      {/* Task title */}
+      <div
+        style={{
+          fontSize: 'var(--t-h2)',
+          fontWeight: 600,
+          letterSpacing: '-0.01em',
+          color: 'var(--text)',
+          marginBottom: 10,
+          lineHeight: 1.25,
+        }}
+      >
+        {task.text}
+      </div>
+
+      {/* CTA row */}
+      <div className="flex items-center gap-2 mt-1 flex-wrap">
+        <button
+          onClick={onOpenTasks}
+          style={{
+            height: 40,
+            padding: '0 18px',
+            background: 'var(--primary)',
+            border: 'none',
+            borderRadius: 'var(--r-sm)',
+            color: '#fff',
+            fontSize: 'var(--t-sm)',
+            fontWeight: 600,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+          }}
+        >
+          → Resume session
+        </button>
+        <Link
+          href="/tasks"
+          style={{
+            height: 40,
+            padding: '0 16px',
+            background: 'var(--card)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--r-sm)',
+            color: 'var(--text2)',
+            fontSize: 'var(--t-sm)',
+            fontWeight: 500,
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            textDecoration: 'none',
+          }}
+        >
+          All tasks →
+        </Link>
+      </div>
+    </HeroCard>
   );
 }

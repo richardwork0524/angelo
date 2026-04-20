@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { cachedFetch } from '@/lib/cache';
+import { HeroCard, TierLabel } from '@/components/hero-card';
 
 type Range = 'today' | '7d' | '30d' | 'all';
 
@@ -127,6 +128,20 @@ export default function SessionsPage() {
 
   const todayIso = new Date().toISOString().slice(0, 10);
 
+  // Group sessions into today / this-week / older for hero hierarchy
+  const todaySessions = useMemo(
+    () => filtered.filter((s) => s.session_date === todayIso),
+    [filtered, todayIso]
+  );
+  const weekSessions = useMemo(
+    () => filtered.filter((s) => s.session_date < todayIso && s.session_date >= new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10)),
+    [filtered, todayIso]
+  );
+  const olderSessions = useMemo(
+    () => filtered.filter((s) => s.session_date < new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10)),
+    [filtered]
+  );
+
   return (
     <div className="h-full overflow-y-auto" data-testid="sessions-page">
       <div className="max-w-[1280px] mx-auto px-4 md:px-8 py-5 md:py-7" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -232,12 +247,97 @@ export default function SessionsPage() {
           />
         </div>
 
-        {/* Session list */}
-        {loading ? (
-          <div className="flex items-center justify-center" style={{ height: 180 }}>
-            <div className="w-6 h-6 rounded-full border-2 border-[var(--primary)] border-t-transparent animate-spin" />
+        {/* HERO — Today's sessions */}
+        <div>
+          <TierLabel>HERO · TODAY</TierLabel>
+          {loading ? (
+            <div className="flex items-center justify-center" style={{ height: 80 }}>
+              <div className="w-5 h-5 rounded-full border-2 border-[var(--primary)] border-t-transparent animate-spin" />
+            </div>
+          ) : todaySessions.length === 0 ? (
+            <HeroCard accentHex="#10B981">
+              <div style={{ color: 'var(--text3)', fontSize: 'var(--t-sm)', textAlign: 'center', padding: '4px 0' }}>
+                No sessions today yet
+              </div>
+            </HeroCard>
+          ) : (
+            <HeroCard accentHex="#10B981">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, margin: '-4px 0' }}>
+                {todaySessions.map((s) => (
+                  <SessionRowItem
+                    key={s.id}
+                    s={s}
+                    expanded={expanded === s.id}
+                    onToggle={() => setExpanded(expanded === s.id ? null : s.id)}
+                    heroStyle
+                  />
+                ))}
+              </div>
+            </HeroCard>
+          )}
+        </div>
+
+        {/* SUB — This week */}
+        {!loading && weekSessions.length > 0 && (
+          <div>
+            <TierLabel>SUB · THIS WEEK</TierLabel>
+            <div
+              style={{
+                background: 'var(--card)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--r)',
+                overflow: 'hidden',
+              }}
+            >
+              {weekSessions.map((s) => (
+                <SessionRowItem
+                  key={s.id}
+                  s={s}
+                  expanded={expanded === s.id}
+                  onToggle={() => setExpanded(expanded === s.id ? null : s.id)}
+                />
+              ))}
+            </div>
           </div>
-        ) : filtered.length === 0 ? (
+        )}
+
+        {/* TERTIARY — Older sessions */}
+        {!loading && olderSessions.length > 0 && (
+          <div>
+            <TierLabel>TERTIARY · OLDER</TierLabel>
+            <div
+              style={{
+                background: 'var(--card)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--r)',
+                overflow: 'hidden',
+              }}
+            >
+              {olderSessions.slice(0, 10).map((s) => (
+                <SessionRowItem
+                  key={s.id}
+                  s={s}
+                  expanded={expanded === s.id}
+                  onToggle={() => setExpanded(expanded === s.id ? null : s.id)}
+                  compact
+                />
+              ))}
+              {olderSessions.length > 10 && (
+                <div style={{ padding: '10px 16px', textAlign: 'center' }}>
+                  <button
+                    onClick={() => setRange('all')}
+                    style={{ fontSize: 'var(--t-sm)', color: 'var(--primary-2)', background: 'none', border: 'none', cursor: 'pointer' }}
+                  >
+                    Load {olderSessions.length - 10} more →
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Fallback: no sessions at all */}
+        {!loading && filtered.length === 0 && (
           <div
             style={{
               textAlign: 'center',
@@ -250,17 +350,6 @@ export default function SessionsPage() {
             }}
           >
             No sessions match the current filters
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {filtered.map((s) => (
-              <SessionRowItem
-                key={s.id}
-                s={s}
-                expanded={expanded === s.id}
-                onToggle={() => setExpanded(expanded === s.id ? null : s.id)}
-              />
-            ))}
           </div>
         )}
 
@@ -356,17 +445,57 @@ function ChartCard({
   );
 }
 
-function SessionRowItem({ s, expanded, onToggle }: { s: SessionRow; expanded: boolean; onToggle: () => void }) {
+function SessionRowItem({
+  s,
+  expanded,
+  onToggle,
+  heroStyle = false,
+  compact = false,
+}: {
+  s: SessionRow;
+  expanded: boolean;
+  onToggle: () => void;
+  heroStyle?: boolean;
+  compact?: boolean;
+}) {
   const totalTokens = (s.input_tokens || 0) + (s.output_tokens || 0);
   const surfaceColor = SURFACE_COLOR[s.surface || ''] || 'var(--text3)';
   const when = relativeTime(s.created_at);
+
+  // Compact (tertiary) row — no expand panel, minimal data
+  if (compact) {
+    return (
+      <Link
+        href={`/session/${s.id}`}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          padding: '10px 16px',
+          borderBottom: '1px solid var(--border)',
+          textDecoration: 'none',
+          color: 'var(--text)',
+        }}
+      >
+        <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11, color: 'var(--text3)', minWidth: 54 }}>
+          {s.session_code ? `#${s.session_code.slice(-6)}` : s.id.slice(0, 8)}
+        </span>
+        <span style={{ flex: 1, minWidth: 0, fontSize: 'var(--t-sm)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text2)' }}>
+          {s.title}
+        </span>
+        <span style={{ fontSize: 'var(--t-tiny)', color: 'var(--text3)', whiteSpace: 'nowrap' }}>{when}</span>
+      </Link>
+    );
+  }
+
   return (
     <div
       style={{
-        background: 'var(--card)',
-        border: '1px solid var(--border)',
-        borderRadius: 'var(--r)',
+        background: heroStyle ? 'transparent' : 'var(--card)',
+        border: heroStyle ? 'none' : '1px solid var(--border)',
+        borderRadius: heroStyle ? 0 : 'var(--r)',
         overflow: 'hidden',
+        borderBottom: heroStyle ? '1px solid rgba(255,255,255,0.08)' : undefined,
       }}
     >
       <button

@@ -7,6 +7,7 @@ import { cachedFetch, invalidateCache } from '@/lib/cache';
 import { bgMutate } from '@/lib/mutate';
 import { useBreakpoint } from '@/hooks/useBreakpoint';
 import { TaskList } from '@/components/task/task-list';
+import { HeroCard, TierLabel } from '@/components/hero-card';
 import type { TaskItem } from '@/components/task/task-row';
 import type { DetailTask } from '@/components/task/task-detail';
 
@@ -360,6 +361,19 @@ function TasksPageInner() {
     (search.trim() ? 1 : 0) +
     (showCompleted ? 1 : 0);
 
+  // Hero: top open task — P0+now first, then P0, then P1, then any open
+  const heroTask = !showCompleted
+    ? (tasksAsItems.find((t) => !t.completed && t.priority === 'P0' && t.bucket === 'THIS_WEEK') ||
+       tasksAsItems.find((t) => !t.completed && t.priority === 'P0') ||
+       tasksAsItems.find((t) => !t.completed && t.priority === 'P1') ||
+       tasksAsItems.find((t) => !t.completed) ||
+       null)
+    : null;
+
+  // Priority hex for hero card accent
+  const TASK_PRI_HEX: Record<string, string> = { P0: '#EF4444', P1: '#F59E0B', P2: '#6366F1' };
+  const heroAccent = TASK_PRI_HEX[heroTask?.priority || 'P2'] ?? '#6366F1';
+
   return (
     <div className="h-full overflow-y-auto" data-testid="tasks-page">
       <div
@@ -572,6 +586,58 @@ function TasksPageInner() {
             {submitting ? '…' : 'Add'}
           </button>
         </form>
+
+        {/* HERO — top of queue */}
+        {!loading && heroTask && (
+          <div>
+            <TierLabel>HERO · TOP OF QUEUE</TierLabel>
+            <HeroCard accentHex={heroAccent}>
+              <div className="flex items-center gap-2 mb-2 flex-wrap">
+                {/* Priority chip */}
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px 3px 5px', borderRadius: 6, background: 'var(--card)', border: '1px solid var(--border)', fontSize: 11, fontWeight: 700, color: heroAccent }}>
+                  <span style={{ width: 4, height: 14, borderRadius: 2, background: heroAccent, display: 'inline-block' }} />
+                  {heroTask.priority || 'P2'}
+                </span>
+                {/* Project chip */}
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 6, background: 'var(--card)', border: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text2)' }}>
+                  <span style={{ width: 6, height: 6, borderRadius: 2, background: 'var(--primary)', display: 'inline-block' }} />
+                  {heroTask.project_key}
+                </span>
+                <span style={{ marginLeft: 'auto', fontFamily: 'ui-monospace, monospace', fontSize: 11, color: 'var(--text3)' }}>
+                  {heroTask.bucket === 'THIS_WEEK' ? 'this week' : heroTask.bucket === 'THIS_MONTH' ? 'this month' : 'parked'}
+                </span>
+              </div>
+              <div
+                style={{ fontSize: isDesktop ? 'var(--t-h2)' : 'var(--t-h3)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.25, marginBottom: 12 }}
+                onClick={() => setSelectedTaskId(heroTask.id)}
+                className="cursor-pointer"
+              >
+                {heroTask.text}
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  onClick={() => setSelectedTaskId(heroTask.id)}
+                  style={{ height: 36, padding: '0 16px', background: 'var(--primary)', border: 'none', borderRadius: 'var(--r-sm)', color: '#fff', fontSize: 'var(--t-sm)', fontWeight: 600, cursor: 'pointer' }}
+                >
+                  Open task
+                </button>
+                <button
+                  onClick={() => handleToggle(heroTask.id)}
+                  style={{ height: 36, padding: '0 14px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', color: 'var(--text2)', fontSize: 'var(--t-sm)', cursor: 'pointer' }}
+                >
+                  ✓ Mark done
+                </button>
+              </div>
+            </HeroCard>
+          </div>
+        )}
+
+        {/* SUB — bucket list */}
+        {!loading && data && tasksAsItems.length > 0 && (
+          <div>
+            <TierLabel>SUB · ALL TASKS</TierLabel>
+          </div>
+        )}
 
         {/* Task list */}
         {loading && !data ? (
