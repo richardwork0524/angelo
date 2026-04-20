@@ -81,14 +81,8 @@ export function Topbar({ onToggleNav, navOpen = false }: { onToggleNav?: () => v
 
   const fmtK = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n);
 
-  function openQuickNote() {
-    const detail = mounted
-      ? {
-          project_key: mounted.project_key,
-          attach_hint: mounted.handoff_code || mounted.scope_name || null,
-        }
-      : {};
-    window.dispatchEvent(new CustomEvent('quick-note', { detail }));
+  function openCreateChooser() {
+    window.dispatchEvent(new CustomEvent('create-chooser', { detail: {} }));
   }
 
   return (
@@ -252,10 +246,10 @@ export function Topbar({ onToggleNav, navOpen = false }: { onToggleNav?: () => v
         </span>
       </div>
 
-      {/* FAB — quick note */}
+      {/* FAB — quick capture (note or task) */}
       <button
-        onClick={openQuickNote}
-        title="Quick note"
+        onClick={openCreateChooser}
+        title="Quick capture"
         className="transition-colors flex items-center justify-center"
         style={{
           width: 34,
