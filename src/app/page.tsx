@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { cachedFetch } from '@/lib/cache';
+import { cachedFetch, invalidateCache } from '@/lib/cache';
 import { patchHandoff } from '@/lib/mutate';
 import { StatusBadge } from '@/components/status-badge';
 import { HeroCard, TierLabel } from '@/components/hero-card';
@@ -143,7 +143,13 @@ export default function HomePage() {
     setData((prev) => prev ? { ...prev, mounted_handoffs: [] } : prev);
     showToast('Handoff unmounted');
     setTimeout(() => {
-      patchHandoff(unmountedId, { is_mounted: false }, { onSuccess: () => fetchHome() });
+      patchHandoff(unmountedId, { is_mounted: false }, {
+        onSuccess: () => {
+          invalidateCache(`/api/handoff/${unmountedId}`);
+          invalidateCache('/api/handoffs');
+          fetchHome();
+        },
+      });
     }, 500);
   }
 

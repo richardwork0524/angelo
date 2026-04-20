@@ -137,7 +137,7 @@ export function Topbar({ onToggleNav, navOpen = false }: { onToggleNav?: () => v
           A
         </span>
         Angelo
-        <span style={{ color: 'var(--text3)', fontWeight: 400, fontSize: 'var(--t-sm)', marginLeft: 4 }}>v4</span>
+        <span style={{ color: 'var(--text3)', fontWeight: 400, fontSize: 'var(--t-sm)', marginLeft: 4 }}>v0.1.0</span>
       </Link>
 
       <div className="flex-1" />
