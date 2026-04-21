@@ -4,19 +4,29 @@ import Link from 'next/link';
 import type { EntitySummary, EntityType } from '@/lib/types';
 
 const ETYPE_STYLE: Record<EntityType, { bg: string; text: string; tone: string }> = {
-  company: { bg: 'var(--success-dim)', text: 'var(--success)', tone: 'success' },
-  app:     { bg: 'var(--primary-dim)', text: 'var(--primary-2)', tone: 'primary' },
-  game:    { bg: 'var(--warn-dim)',    text: 'var(--warn)',    tone: 'warn' },
-  shell:   { bg: 'var(--pink-dim)',    text: 'var(--pink)',    tone: 'pink' },
-  meta:    { bg: 'var(--vault-dim)',   text: 'var(--vault)',   tone: 'vault' },
+  company:    { bg: 'var(--success-dim)', text: 'var(--success)',   tone: 'success' },
+  department: { bg: 'var(--success-dim)', text: 'var(--success)',   tone: 'success' },
+  app:        { bg: 'var(--primary-dim)', text: 'var(--primary-2)', tone: 'primary' },
+  module:     { bg: 'var(--primary-dim)', text: 'var(--primary-2)', tone: 'primary' },
+  feature:    { bg: 'var(--primary-dim)', text: 'var(--primary-2)', tone: 'primary' },
+  game:       { bg: 'var(--warn-dim)',    text: 'var(--warn)',      tone: 'warn' },
+  website:    { bg: 'var(--warn-dim)',    text: 'var(--warn)',      tone: 'warn' },
+  shell:      { bg: 'var(--pink-dim)',    text: 'var(--pink)',      tone: 'pink' },
+  meta:       { bg: 'var(--vault-dim)',   text: 'var(--vault)',     tone: 'vault' },
+  mission:    { bg: 'var(--purple-dim)',  text: 'var(--purple)',    tone: 'purple' },
 };
 
 const CHILD_LABEL: Record<EntityType, string> = {
-  company: 'missions',
-  app:     'modules',
-  game:    'features',
-  shell:   'modules',
-  meta:    'systems',
+  company:    'departments',
+  department: 'missions',
+  app:        'modules',
+  module:     'features',
+  feature:    'missions',
+  game:       'missions',
+  website:    'missions',
+  shell:      'modules',
+  meta:       'systems',
+  mission:    'tasks',
 };
 
 export function EtypeChip({ type }: { type: EntityType }) {

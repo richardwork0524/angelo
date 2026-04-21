@@ -25,7 +25,8 @@ export async function GET(
     const { data: handoff, error } = await supabase
       .from("angelo_handoffs")
       .select(
-        "id, handoff_code, created_by_session_id, project_key, scope_type, scope_name, entry_point, version, sections_total, sections_completed, sections_remaining, source, status, picked_up_by_session_id, notes, vault_path, purpose, is_mounted, created_at, updated_at"
+        `id, handoff_code, created_by_session_id, project_key, scope_type, scope_name, entry_point, version, sections_total, sections_completed, sections_remaining, source, status, picked_up_by_session_id, notes, vault_path, purpose, is_mounted, created_at, updated_at,
+        mission:angelo_projects!mission_id(display_name)`
       )
       .eq("id", id)
       .single();
@@ -72,8 +73,15 @@ export async function GET(
     const tokens_total = sessions.reduce((a, s) => a + (s.input_tokens || 0) + (s.output_tokens || 0), 0);
     const cost_total = sessions.reduce((a, s) => a + (Number(s.cost_usd) || 0), 0);
 
+    // Flatten the mission join
+    const { mission: missionJoin, ...handoffBase } = handoff as typeof handoff & {
+      mission?: { display_name: string } | null;
+    };
+    const mission_display_name: string | null = missionJoin?.display_name ?? null;
+
     return NextResponse.json({
-      ...handoff,
+      ...handoffBase,
+      mission_display_name,
       project,
       sessions,
       attached_notes: notes || [],

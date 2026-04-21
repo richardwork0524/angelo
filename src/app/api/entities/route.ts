@@ -103,13 +103,17 @@ export async function GET() {
         };
       });
 
-    const byType = {
-      company: entities.filter((e) => e.entity_type === "company").length,
-      app: entities.filter((e) => e.entity_type === "app").length,
-      game: entities.filter((e) => e.entity_type === "game").length,
-      shell: entities.filter((e) => e.entity_type === "shell").length,
-      meta: entities.filter((e) => e.entity_type === "meta").length,
-    };
+    const ALL_ENTITY_TYPES = [
+      'company', 'department', 'app', 'module', 'feature',
+      'game', 'website', 'shell', 'meta', 'mission',
+    ] as const;
+    const byType = entities.reduce<Record<string, number>>(
+      (acc, e) => {
+        if (e.entity_type) acc[e.entity_type] = (acc[e.entity_type] ?? 0) + 1;
+        return acc;
+      },
+      Object.fromEntries(ALL_ENTITY_TYPES.map((t) => [t, 0]))
+    );
 
     return NextResponse.json({
       entities,

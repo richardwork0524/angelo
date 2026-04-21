@@ -42,6 +42,7 @@ interface HandoffProject {
 
 interface HandoffDetail extends Omit<Handoff, 'notes'> {
   notes: string | null;
+  mission_display_name?: string | null;
   project: HandoffProject | null;
   sessions: HandoffSession[];
   attached_notes: HandoffNote[];

@@ -7,6 +7,10 @@ import { EtypeChip } from '@/components/entity-card';
 import { StatusBadge } from '@/components/status-badge';
 import { cachedFetch } from '@/lib/cache';
 import type { EntityType } from '@/lib/types';
+import {
+  CHILD_LABEL_FOR_PARENT,
+  CHILD_TYPE_FOR_PARENT,
+} from '@/lib/hierarchy-rules';
 
 interface SubItem {
   child_key: string;
@@ -70,20 +74,17 @@ interface EntityDetail {
   notes: Note[];
 }
 
-const CHILD_LABEL: Record<EntityType, string> = {
-  company: 'Missions',
-  app:     'Modules / features',
-  game:    'Features',
-  shell:   'Modules',
-  meta:    'Sub-items',
-};
-
-const ADD_LABEL: Record<EntityType, string> = {
-  company: '＋ Mission',
-  app:     '＋ Feature',
-  game:    '＋ Feature',
-  shell:   '＋ Module',
-  meta:    '＋ Item',
+const CHILD_SECTION_LABEL: Record<EntityType, string> = {
+  company:    'Departments',
+  department: 'Missions',
+  app:        'Modules',
+  module:     'Features',
+  feature:    'Missions',
+  game:       'Missions',
+  website:    'Missions',
+  shell:      'Modules',
+  meta:       'Sub-items',
+  mission:    'Tasks',
 };
 
 export default function EntityDetailPage({ params }: { params: Promise<{ key: string }> }) {
@@ -92,6 +93,7 @@ export default function EntityDetailPage({ params }: { params: Promise<{ key: st
   const [entity, setEntity] = useState<EntityDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
   const fetchEntity = useCallback(async () => {
     setLoading(true);
@@ -144,8 +146,9 @@ export default function EntityDetailPage({ params }: { params: Promise<{ key: st
     );
   }
 
-  const childLabel = CHILD_LABEL[entity.entity_type];
-  const addLabel = ADD_LABEL[entity.entity_type];
+  const childLabel = CHILD_SECTION_LABEL[entity.entity_type] ?? 'Children';
+  const addButtonLabel = CHILD_LABEL_FOR_PARENT[entity.entity_type] ?? '';
+  const hasAddButton = addButtonLabel !== '';
 
   return (
     <div className="h-full overflow-y-auto" data-testid="entity-detail-page">
@@ -216,7 +219,11 @@ export default function EntityDetailPage({ params }: { params: Promise<{ key: st
               ＋ Note
             </GhostButton>
             <GhostButton disabled>Vault →</GhostButton>
-            <PrimaryButton disabled>{addLabel}</PrimaryButton>
+            {hasAddButton && (
+              <PrimaryButton onClick={() => setShowCreateModal(true)}>
+                {addButtonLabel}
+              </PrimaryButton>
+            )}
           </div>
         </div>
 
@@ -469,6 +476,205 @@ export default function EntityDetailPage({ params }: { params: Promise<{ key: st
           </div>
         </div>
       </div>
+
+      {/* Child creator modal */}
+      {showCreateModal && (
+        <CreateChildModal
+          entity={entity}
+          onClose={() => setShowCreateModal(false)}
+          onCreated={() => {
+            setShowCreateModal(false);
+            fetchEntity();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+interface CreateChildModalProps {
+  entity: EntityDetail;
+  onClose: () => void;
+  onCreated: () => void;
+}
+
+const SLUG_RE = /^[a-z0-9-]+$/;
+
+function CreateChildModal({ entity, onClose, onCreated }: CreateChildModalProps) {
+  const childType = CHILD_TYPE_FOR_PARENT[entity.entity_type];
+  const [childKey, setChildKey] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const slugValid = childType === 'task' || SLUG_RE.test(childKey);
+  const canSubmit = displayName.trim() !== '' && !submitting &&
+    (childType === 'task' || (childKey.trim() !== '' && slugValid));
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!canSubmit) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/entities/create-child', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          parent_key: entity.child_key,
+          child_key: childType === 'task' ? '' : childKey.trim(),
+          display_name: displayName.trim(),
+          entity_type: childType,
+        }),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({ error: 'Unknown error' }));
+        setError(json.error ?? 'Request failed');
+        setSubmitting(false);
+        return;
+      }
+      onCreated();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Network error');
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.55)',
+        zIndex: 1000,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 16,
+      }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div
+        style={{
+          background: 'var(--card)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--r-lg)',
+          padding: 24,
+          width: '100%',
+          maxWidth: 440,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 16,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ fontSize: 'var(--t-h2)', fontWeight: 600, color: 'var(--text)' }}>
+            {CHILD_LABEL_FOR_PARENT[entity.entity_type]}
+          </div>
+          <button
+            onClick={onClose}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              color: 'var(--text3)',
+              fontSize: 18,
+              lineHeight: 1,
+              padding: '2px 6px',
+            }}
+          >
+            ✕
+          </button>
+        </div>
+
+        <div
+          style={{
+            fontSize: 'var(--t-tiny)',
+            color: 'var(--text3)',
+            padding: '6px 10px',
+            background: 'var(--card-alt)',
+            borderRadius: 'var(--r-sm)',
+          }}
+        >
+          Creating a new <strong style={{ color: 'var(--text2)' }}>{childType}</strong> under{' '}
+          <code style={{ fontFamily: 'ui-monospace', fontSize: 10 }}>{entity.child_key}</code>
+        </div>
+
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <label style={{ fontSize: 'var(--t-tiny)', color: 'var(--text3)', fontWeight: 500 }}>
+              Display name <span style={{ color: 'var(--red)' }}>*</span>
+            </label>
+            <input
+              type="text"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              placeholder="e.g. Auth & Permissions"
+              autoFocus
+              style={{
+                padding: '8px 10px',
+                background: 'var(--bg)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--r-sm)',
+                color: 'var(--text)',
+                fontSize: 'var(--t-sm)',
+                outline: 'none',
+              }}
+            />
+          </div>
+
+          {childType !== 'task' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <label style={{ fontSize: 'var(--t-tiny)', color: 'var(--text3)', fontWeight: 500 }}>
+                Slug (child_key) <span style={{ color: 'var(--red)' }}>*</span>
+              </label>
+              <input
+                type="text"
+                value={childKey}
+                onChange={(e) => setChildKey(e.target.value.toLowerCase())}
+                placeholder="e.g. auth-permissions"
+                style={{
+                  padding: '8px 10px',
+                  background: 'var(--bg)',
+                  border: `1px solid ${childKey && !slugValid ? 'var(--red)' : 'var(--border)'}`,
+                  borderRadius: 'var(--r-sm)',
+                  color: 'var(--text)',
+                  fontSize: 'var(--t-sm)',
+                  fontFamily: 'ui-monospace',
+                  outline: 'none',
+                }}
+              />
+              {childKey && !slugValid && (
+                <div style={{ fontSize: 'var(--t-tiny)', color: 'var(--red)' }}>
+                  Only lowercase letters, numbers and hyphens allowed
+                </div>
+              )}
+            </div>
+          )}
+
+          {error && (
+            <div
+              style={{
+                fontSize: 'var(--t-tiny)',
+                color: 'var(--red)',
+                padding: '6px 10px',
+                background: 'var(--red-dim, rgba(239,68,68,0.08))',
+                borderRadius: 'var(--r-sm)',
+                border: '1px solid var(--red)',
+              }}
+            >
+              {error}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
+            <GhostButton onClick={onClose} type="button">Cancel</GhostButton>
+            <PrimaryButton type="submit" disabled={!canSubmit}>
+              {submitting ? 'Creating…' : 'Create'}
+            </PrimaryButton>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
@@ -551,9 +757,20 @@ function Dot({ color, title }: { color: string; title?: string }) {
   return <span style={{ width: 6, height: 6, borderRadius: '50%', background: color, display: 'inline-block' }} title={title} />;
 }
 
-function GhostButton({ children, disabled, onClick }: { children: React.ReactNode; disabled?: boolean; onClick?: () => void }) {
+function GhostButton({
+  children,
+  disabled,
+  onClick,
+  type = 'button',
+}: {
+  children: React.ReactNode;
+  disabled?: boolean;
+  onClick?: () => void;
+  type?: 'button' | 'submit' | 'reset';
+}) {
   return (
     <button
+      type={type}
       disabled={disabled}
       onClick={onClick}
       style={{
@@ -573,10 +790,22 @@ function GhostButton({ children, disabled, onClick }: { children: React.ReactNod
   );
 }
 
-function PrimaryButton({ children, disabled }: { children: React.ReactNode; disabled?: boolean }) {
+function PrimaryButton({
+  children,
+  disabled,
+  onClick,
+  type = 'button',
+}: {
+  children: React.ReactNode;
+  disabled?: boolean;
+  onClick?: () => void;
+  type?: 'button' | 'submit' | 'reset';
+}) {
   return (
     <button
+      type={type}
       disabled={disabled}
+      onClick={onClick}
       style={{
         padding: '8px 12px',
         background: 'var(--primary)',

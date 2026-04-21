@@ -1,4 +1,4 @@
-export type EntityType = 'company' | 'app' | 'game' | 'shell' | 'meta';
+export type EntityType = 'company' | 'department' | 'app' | 'module' | 'feature' | 'game' | 'shell' | 'meta' | 'mission' | 'website';
 
 export interface Project {
   id: string;
