@@ -198,7 +198,7 @@ export default function HandoffDetailPage({ params }: { params: Promise<{ id: st
               ←
             </button>
             <div style={{ minWidth: 0 }}>
-              <Breadcrumb handoff={handoff} shortId={shortId} />
+              <Breadcrumb handoff={handoff} />
               <h1
                 className="font-semibold tracking-tight"
                 style={{ fontSize: 'var(--t-h1)', marginTop: 6, color: 'var(--text)' }}
@@ -316,23 +316,17 @@ export default function HandoffDetailPage({ params }: { params: Promise<{ id: st
               )}
             </SectionCard>
 
-            {/* Summary / Notes body */}
-            {handoff.notes && (
-              <SectionCard>
-                <SectionHead title="Summary" />
-                <p
-                  style={{
-                    fontSize: 'var(--t-sm)',
-                    color: 'var(--text2)',
-                    lineHeight: 1.6,
-                    whiteSpace: 'pre-wrap',
-                    margin: 0,
-                  }}
-                >
-                  {handoff.notes}
-                </p>
-              </SectionCard>
-            )}
+            {/* Summary timeline */}
+            {handoff.notes && (() => {
+              const sections = parseSummarySections(handoff.notes);
+              if (sections.length === 0) return null;
+              return (
+                <SectionCard>
+                  <SectionHead title="Summary" count={sections.length} rightText="click to expand" />
+                  <SummaryTimeline sections={sections} />
+                </SectionCard>
+              );
+            })()}
 
             {/* Sessions */}
             <SectionCard>
@@ -395,11 +389,6 @@ export default function HandoffDetailPage({ params }: { params: Promise<{ id: st
             <SectionCard>
               <SectionHead title="Stats" />
               <KvList>
-                <KvRow k="Purpose" v={<PurposeChip purpose={purpose} />} />
-                <KvRow k="Status" v={<StatusBadge status={handoff.status} />} />
-                {handoff.version && (
-                  <KvRow k="Version" v={<code style={{ fontFamily: 'ui-monospace', fontSize: 11 }}>{handoff.version}</code>} />
-                )}
                 <KvRow k="Sessions" v={String(handoff.sessions.length)} />
                 <KvRow k="Tokens" v={fmtTokens(handoff.tokens_total)} />
                 <KvRow k="Cost" v={`$${handoff.cost_total.toFixed(2)}`} />
@@ -482,7 +471,200 @@ export default function HandoffDetailPage({ params }: { params: Promise<{ id: st
   );
 }
 
-function Breadcrumb({ handoff, shortId }: { handoff: HandoffDetail; shortId: string }) {
+interface ParsedSection {
+  title: string;
+  body: string;
+  status: 'done' | 'in-progress' | 'todo';
+  date: string | null;
+  sessionRefs: string[];
+}
+
+function parseSummarySections(notes: string): ParsedSection[] {
+  const lines = notes.split('\n');
+  const sections: { title: string; bodyLines: string[] }[] = [];
+  let current: { title: string; bodyLines: string[] } | null = null;
+  const intro: string[] = [];
+
+  for (const line of lines) {
+    const m = line.match(/^#{2,3}\s+(.+?)\s*$/);
+    if (m) {
+      if (current) sections.push(current);
+      current = { title: m[1], bodyLines: [] };
+    } else if (current) {
+      current.bodyLines.push(line);
+    } else {
+      intro.push(line);
+    }
+  }
+  if (current) sections.push(current);
+
+  if (sections.length === 0) {
+    const body = intro.join('\n').trim();
+    if (!body) return [];
+    return [{ title: 'Summary', body, status: deriveStatus(body), date: extractDate(body), sessionRefs: extractSessionRefs(body) }];
+  }
+  if (intro.some((l) => l.trim())) {
+    sections.unshift({ title: 'Overview', bodyLines: intro });
+  }
+
+  return sections.map((s) => {
+    const body = s.bodyLines.join('\n').trim();
+    return {
+      title: s.title,
+      body,
+      status: deriveStatus(body),
+      date: extractDate(body),
+      sessionRefs: extractSessionRefs(body),
+    };
+  });
+}
+
+function deriveStatus(body: string): 'done' | 'in-progress' | 'todo' {
+  const checkboxes = [...body.matchAll(/^\s*[-*]?\s*\[([ xX])\]/gm)];
+  if (checkboxes.length === 0) return 'done';
+  const doneCount = checkboxes.filter((c) => c[1].toLowerCase() === 'x').length;
+  if (doneCount === checkboxes.length) return 'done';
+  if (doneCount > 0) return 'in-progress';
+  return 'todo';
+}
+
+function extractDate(body: string): string | null {
+  const m = body.match(/\b(20\d\d-\d\d-\d\d)\b/);
+  return m ? m[1] : null;
+}
+
+function extractSessionRefs(body: string): string[] {
+  const refs = new Set<string>();
+  const re = /session[\s:_-]+([a-z0-9-]{6,})/gi;
+  let m;
+  while ((m = re.exec(body)) !== null) refs.add(m[1]);
+  return Array.from(refs);
+}
+
+function SummaryTimeline({ sections }: { sections: ParsedSection[] }) {
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
+  return (
+    <div style={{ position: 'relative', paddingLeft: 22 }}>
+      {sections.length > 1 && (
+        <div
+          style={{
+            position: 'absolute',
+            left: 5,
+            top: 10,
+            bottom: 10,
+            width: 0,
+            borderLeft: '1px dashed var(--border)',
+          }}
+        />
+      )}
+      {sections.map((s, i) => {
+        const color = s.status === 'done' ? 'var(--success)' : s.status === 'in-progress' ? 'var(--primary-2)' : 'var(--text4)';
+        const expanded = expandedIdx === i;
+        return (
+          <div key={i} style={{ position: 'relative', marginBottom: i === sections.length - 1 ? 0 : 14 }}>
+            <span
+              style={{
+                position: 'absolute',
+                left: -22,
+                top: 5,
+                width: 11,
+                height: 11,
+                borderRadius: '50%',
+                background: s.status === 'todo' ? 'var(--bg)' : color,
+                border: `2px solid ${color}`,
+                boxSizing: 'border-box',
+              }}
+            />
+            <div
+              onClick={() => setExpandedIdx(expanded ? null : i)}
+              style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 4 }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 'var(--t-sm)', color: 'var(--text)', fontWeight: 500 }}>{s.title}</span>
+                <TimelineStatusPill status={s.status} />
+                {s.date && (
+                  <span style={{ fontFamily: 'ui-monospace', fontSize: 'var(--t-tiny)', color: 'var(--text3)' }}>
+                    {s.date}
+                  </span>
+                )}
+                {s.sessionRefs.length > 0 && (
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                    {s.sessionRefs.slice(0, 3).map((ref) => (
+                      <Link
+                        key={ref}
+                        href={`/session/${encodeURIComponent(ref)}`}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          fontFamily: 'ui-monospace',
+                          fontSize: 9,
+                          padding: '1px 6px',
+                          borderRadius: 3,
+                          background: 'var(--primary-dim)',
+                          color: 'var(--primary-2)',
+                          textDecoration: 'none',
+                        }}
+                      >
+                        {ref.slice(0, 8)}
+                      </Link>
+                    ))}
+                    {s.sessionRefs.length > 3 && (
+                      <span style={{ fontSize: 9, color: 'var(--text3)' }}>+{s.sessionRefs.length - 3}</span>
+                    )}
+                  </div>
+                )}
+                <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--text4)' }}>{expanded ? '▾' : '▸'}</span>
+              </div>
+            </div>
+            {expanded && s.body && (
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: '10px 12px',
+                  background: 'var(--bg)',
+                  borderRadius: 'var(--r-sm)',
+                  border: '1px solid var(--border)',
+                  fontSize: 'var(--t-sm)',
+                  color: 'var(--text2)',
+                  whiteSpace: 'pre-wrap',
+                  lineHeight: 1.6,
+                }}
+              >
+                {s.body}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function TimelineStatusPill({ status }: { status: 'done' | 'in-progress' | 'todo' }) {
+  const config = {
+    'done': { label: 'done', bg: 'var(--success-dim)', fg: 'var(--success)' },
+    'in-progress': { label: 'in progress', bg: 'var(--primary-dim)', fg: 'var(--primary-2)' },
+    'todo': { label: 'todo', bg: 'var(--card-alt)', fg: 'var(--text3)' },
+  }[status];
+  return (
+    <span
+      style={{
+        fontSize: 9,
+        fontWeight: 700,
+        textTransform: 'uppercase',
+        letterSpacing: '.06em',
+        padding: '1px 6px',
+        borderRadius: 3,
+        background: config.bg,
+        color: config.fg,
+      }}
+    >
+      {config.label}
+    </span>
+  );
+}
+
+function Breadcrumb({ handoff }: { handoff: HandoffDetail }) {
+  const missionName = (handoff as HandoffDetail & { mission_display_name?: string | null }).mission_display_name;
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-tiny)', color: 'var(--text3)', flexWrap: 'wrap' }}>
       <Link href="/handoffs" style={{ color: 'var(--text3)', textDecoration: 'none' }}>Handoffs</Link>
@@ -491,14 +673,14 @@ function Breadcrumb({ handoff, shortId }: { handoff: HandoffDetail; shortId: str
         href={handoff.project?.entity_type ? `/entity/${encodeURIComponent(handoff.project_key)}` : `/project/${encodeURIComponent(handoff.project_key)}`}
         style={{ fontFamily: 'ui-monospace', color: 'var(--text3)', textDecoration: 'none' }}
       >
-        {handoff.project_key}
+        {handoff.project?.display_name || handoff.project_key}
       </Link>
-      <span style={{ color: 'var(--text4)' }}>›</span>
-      <span style={{ textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text3)' }}>
-        {handoff.scope_type}
-      </span>
-      <span style={{ color: 'var(--text4)' }}>·</span>
-      <span style={{ fontFamily: 'ui-monospace', color: 'var(--primary-2)', fontWeight: 600 }}>{shortId}</span>
+      {missionName && (
+        <>
+          <span style={{ color: 'var(--text4)' }}>›</span>
+          <span style={{ color: 'var(--text3)' }}>{missionName}</span>
+        </>
+      )}
     </div>
   );
 }

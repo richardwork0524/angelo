@@ -12,11 +12,11 @@ type StatusFilter = 'all' | 'active' | 'mounted' | 'done' | 'blocked';
 type PurposeFilter = 'all' | HandoffPurpose;
 
 const STATUS_TABS: { key: StatusFilter; label: string }[] = [
-  { key: 'all',     label: 'All' },
   { key: 'active',  label: 'Active' },
   { key: 'mounted', label: 'Mounted' },
   { key: 'done',    label: 'Done' },
   { key: 'blocked', label: 'Blocked' },
+  { key: 'all',     label: 'All' },
 ];
 
 const PURPOSE_TABS: { key: HandoffPurpose; label: string }[] = [
@@ -45,7 +45,7 @@ export default function HandoffsPage() {
   const [handoffs, setHandoffs] = useState<Handoff[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('active');
   const [purposeFilter, setPurposeFilter] = useState<PurposeFilter>('all');
   const [search, setSearch] = useState('');
   const { showToast, ToastContainer } = useToast();
@@ -135,15 +135,58 @@ export default function HandoffsPage() {
   return (
     <div className="h-full overflow-y-auto" data-testid="handoffs-page">
       <div className="max-w-[1280px] mx-auto px-4 md:px-8 py-5 md:py-7" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {/* Page head */}
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <h1 className="font-semibold tracking-tight" style={{ fontSize: 'var(--t-h2)' }}>
-            Handoffs
-            <span className="ml-2 font-normal" style={{ color: 'var(--text3)', fontSize: 'var(--t-body)' }}>
-              {counts.total} total · {counts.mountedCount} mounted
-            </span>
-          </h1>
-          <div className="flex gap-2">
+        {/* Hero head */}
+        <div
+          style={{
+            padding: '20px 22px',
+            background: 'linear-gradient(135deg, var(--primary-dim) 0%, transparent 70%)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--r-lg)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 16,
+            flexWrap: 'wrap',
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            <div
+              style={{
+                fontSize: 'var(--t-tiny)',
+                color: 'var(--text3)',
+                textTransform: 'uppercase',
+                letterSpacing: '.08em',
+                marginBottom: 8,
+                fontWeight: 600,
+              }}
+            >
+              Handoffs
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+              <span
+                style={{
+                  fontSize: 42,
+                  fontWeight: 700,
+                  color: counts.activeCount === 0 ? 'var(--text3)' : 'var(--primary-2)',
+                  fontVariantNumeric: 'tabular-nums',
+                  lineHeight: 1,
+                }}
+              >
+                {counts.activeCount}
+              </span>
+              <span style={{ fontSize: 'var(--t-body)', color: 'var(--text2)' }}>
+                active {counts.activeCount === 1 ? 'handoff' : 'handoffs'}
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: 10, marginTop: 10, fontSize: 'var(--t-sm)', color: 'var(--text3)', flexWrap: 'wrap' }}>
+              <span>{counts.mountedCount} mounted</span>
+              <span style={{ color: 'var(--text4)' }}>·</span>
+              <span>{counts.total} total</span>
+              <span style={{ color: 'var(--text4)' }}>·</span>
+              <span>{counts.weekCount} updated this week</span>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
             <button
               onClick={handleExport}
               className="transition-colors"
@@ -266,19 +309,6 @@ export default function HandoffsPage() {
           </div>
         )}
 
-        {/* Stats strip */}
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(4, 1fr)',
-            gap: 12,
-          }}
-        >
-          <StatCell k="Total" v={String(counts.total)} />
-          <StatCell k="Active" v={String(counts.activeCount)} tone="primary" />
-          <StatCell k="Mounted" v={String(counts.mountedCount)} tone="primary" />
-          <StatCell k="This week" v={String(counts.weekCount)} tone="success" />
-        </div>
       </div>
       <ToastContainer />
     </div>
@@ -319,38 +349,3 @@ function FilterTab({ active, onClick, children }: { active: boolean; onClick: ()
   );
 }
 
-function StatCell({ k, v, tone }: { k: string; v: string; tone?: 'primary' | 'success' }) {
-  const color = tone === 'primary' ? 'var(--primary-2)' : tone === 'success' ? 'var(--success)' : 'var(--text)';
-  return (
-    <div
-      style={{
-        background: 'var(--card)',
-        border: '1px solid var(--border)',
-        borderRadius: 'var(--r)',
-        padding: '12px 16px',
-      }}
-    >
-      <div
-        style={{
-          fontSize: 'var(--t-tiny)',
-          color: 'var(--text3)',
-          textTransform: 'uppercase',
-          letterSpacing: '.06em',
-        }}
-      >
-        {k}
-      </div>
-      <div
-        style={{
-          fontSize: 18,
-          fontWeight: 600,
-          fontVariantNumeric: 'tabular-nums',
-          marginTop: 4,
-          color,
-        }}
-      >
-        {v}
-      </div>
-    </div>
-  );
-}
