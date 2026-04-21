@@ -13,6 +13,30 @@ import type { Handoff } from '@/lib/types';
 
 const DAILY_COST_CAP = 6;
 
+interface MountedHandoffRef {
+  id: string;
+  handoff_code: string | null;
+  scope_name: string;
+  project_key: string;
+  is_mounted: boolean;
+}
+
+interface ActiveSession {
+  id: string;
+  session_code: string;
+  project_key: string;
+  mounted_handoff_id: string | null;
+  surface: 'CODE' | 'CHAT' | 'COWORK';
+  started_at: string;
+  last_turn_at: string;
+  turn_count: number;
+  input_tokens_so_far: number;
+  output_tokens_so_far: number;
+  cost_usd_so_far: number;
+  title: string | null;
+  mounted_handoff: MountedHandoffRef | null;
+}
+
 interface Stats {
   cost: number;
   input_tokens: number;
@@ -26,6 +50,7 @@ interface HomeData {
   recent_handoffs: Handoff[];
   stats_today: Stats;
   stats_yesterday: Stats;
+  active_session: ActiveSession[];
 }
 
 interface TopTask {
@@ -236,6 +261,18 @@ export default function HomePage() {
           </div>
         </div>
 
+        {/* ACTIVE SESSION — live breadcrumb (hidden when empty) */}
+        {(data.active_session?.length ?? 0) > 0 && (
+          <div className="mb-6">
+            <TierLabel>LIVE · ACTIVE SESSION</TierLabel>
+            <div className="flex flex-col gap-2">
+              {data.active_session.map((s) => (
+                <ActiveSessionRow key={s.id} session={s} />
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* HERO — top priority task */}
         <TierLabel>HERO · WHAT&apos;S NEXT</TierLabel>
         {topTask ? (
@@ -352,6 +389,93 @@ export default function HomePage() {
         >
           {toast}
         </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Active Session Row ── */
+
+const SURFACE_COLORS: Record<string, string> = {
+  CODE: '#6366F1',
+  CHAT: '#16A34A',
+  COWORK: '#F59E0B',
+};
+
+function ActiveSessionRow({ session }: { session: ActiveSession }) {
+  const startMins = Math.floor((Date.now() - new Date(session.started_at).getTime()) / 60000);
+  const startLabel = startMins < 1 ? 'just now' : startMins < 60 ? `${startMins}m ago` : `${Math.floor(startMins / 60)}h ago`;
+  const surfaceColor = SURFACE_COLORS[session.surface] || 'var(--primary)';
+
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '1fr auto',
+        gap: 12,
+        alignItems: 'center',
+        padding: '10px 14px',
+        background: 'var(--card)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--r)',
+        borderLeft: `3px solid ${surfaceColor}`,
+      }}
+    >
+      <div style={{ minWidth: 0 }}>
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Project key */}
+          <span style={{ fontWeight: 700, fontSize: 'var(--t-sm)', color: 'var(--text)' }}>
+            {session.project_key}
+          </span>
+          {/* Surface badge */}
+          <span
+            style={{
+              padding: '2px 7px',
+              borderRadius: 4,
+              background: `${surfaceColor}22`,
+              color: surfaceColor,
+              fontSize: 'var(--t-tiny)',
+              fontWeight: 700,
+              letterSpacing: '.06em',
+            }}
+          >
+            {session.surface}
+          </span>
+          {/* Title if present */}
+          {session.title && (
+            <span style={{ fontSize: 'var(--t-sm)', color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {session.title}
+            </span>
+          )}
+        </div>
+        <div style={{ fontSize: 'var(--t-tiny)', color: 'var(--text3)', marginTop: 3 }}>
+          Started {startLabel}
+          {' · '}
+          {session.turn_count} {session.turn_count === 1 ? 'turn' : 'turns'}
+          {' · '}
+          {(session.input_tokens_so_far).toLocaleString()} in / {(session.output_tokens_so_far).toLocaleString()} out
+          {session.cost_usd_so_far > 0 && (
+            <> · ${Number(session.cost_usd_so_far).toFixed(2)}</>
+          )}
+        </div>
+      </div>
+      {/* Mounted handoff pill */}
+      {session.mounted_handoff && (
+        <Link
+          href={`/handoff/${session.mounted_handoff.id}`}
+          style={{
+            padding: '3px 10px',
+            borderRadius: 12,
+            background: 'var(--primary-dim)',
+            color: 'var(--primary-2)',
+            fontSize: 'var(--t-tiny)',
+            fontWeight: 600,
+            whiteSpace: 'nowrap',
+            textDecoration: 'none',
+          }}
+        >
+          mounted: {session.mounted_handoff.scope_name}
+        </Link>
       )}
     </div>
   );

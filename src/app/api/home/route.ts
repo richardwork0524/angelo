@@ -22,6 +22,7 @@ export async function GET() {
       entitiesCountRes,
       hookErrorsCountRes,
       tasksOpenCountRes,
+      activeSessionsRes,
     ] = await Promise.all([
       // Recent sessions (latest 5)
       supabase
@@ -104,6 +105,15 @@ export async function GET() {
         .from("angelo_tasks")
         .select("id", { count: "exact", head: true })
         .eq("completed", false),
+
+      // Active sessions (live breadcrumb)
+      supabase
+        .from("angelo_active_sessions")
+        .select(`
+          *,
+          mounted_handoff:angelo_handoffs!mounted_handoff_id(id, handoff_code, scope_name, project_key, is_mounted)
+        `)
+        .order("started_at", { ascending: false }),
     ]);
 
     const sessions = sessionsRes.data || [];
@@ -212,8 +222,11 @@ export async function GET() {
       sessions: yesterdaySessions,
     };
 
+    const activeSessions = activeSessionsRes.data || [];
+
     return NextResponse.json({
       // New canonical shape (Topbar, Sidebar, new Home)
+      active_session: activeSessions,
       mounted_handoffs: mountedHandoffs,
       recent_handoffs: recentHandoffs,
       stats_today: statsToday,
