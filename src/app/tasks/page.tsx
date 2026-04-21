@@ -187,6 +187,10 @@ function TasksPageInner() {
   // so we don't re-inject rows the user has since deleted.
   const OPTIMISTIC_TTL_MS = 3000;
   const optimisticAddsRef = useRef<Map<string, number>>(new Map());
+  // Symmetric: pooled reads can still return a just-deleted row for ~100-500ms,
+  // causing the row to flash back into the list. Track pending deletes and strip
+  // them from any incoming server snapshot until the TTL expires.
+  const pendingDeletesRef = useRef<Map<string, number>>(new Map());
   // Discard responses from stale fetches so a slow in-flight request can't
   // overwrite fresher data (e.g. mount fetch resolving after a mutation refetch).
   const fetchVersionRef = useRef(0);
@@ -198,31 +202,62 @@ function TasksPageInner() {
       const d = await cachedFetch<TasksApiResponse>(apiUrl, 5000);
       if (v === fetchVersionRef.current) {
         setData((prev) => {
-          const pending = optimisticAddsRef.current;
           const now = Date.now();
-          // Prune expired entries
+
+          // 1. Strip pending deletes from server snapshot so a slow read
+          //    can't resurrect a row the user just removed.
+          const deletes = pendingDeletesRef.current;
+          for (const [id, ts] of deletes) {
+            if (now - ts > OPTIMISTIC_TTL_MS) deletes.delete(id);
+          }
+          let workingTasks = d.tasks;
+          let workingStats = d.stats;
+          if (deletes.size) {
+            const filtered = d.tasks.filter(
+              (t) => !deletes.has(t.id) && !(t.parent_task_id && deletes.has(t.parent_task_id)),
+            );
+            if (filtered.length !== d.tasks.length) {
+              const openTasks = filtered.filter((t) => !t.completed);
+              workingTasks = filtered;
+              workingStats = {
+                ...d.stats,
+                total: filtered.length,
+                open: openTasks.length,
+                completed: filtered.length - openTasks.length,
+                p0: openTasks.filter((t) => t.priority === 'P0').length,
+                p1: openTasks.filter((t) => t.priority === 'P1').length,
+                p2: openTasks.filter((t) => t.priority === 'P2').length,
+                this_week: openTasks.filter((t) => t.bucket === 'THIS_WEEK').length,
+                this_month: openTasks.filter((t) => t.bucket === 'THIS_MONTH').length,
+                parked: openTasks.filter((t) => t.bucket === 'PARKED').length,
+              };
+            }
+          }
+
+          // 2. Carry over optimistic adds the server hasn't observed yet.
+          const pending = optimisticAddsRef.current;
           for (const [id, ts] of pending) {
             if (now - ts > OPTIMISTIC_TTL_MS) pending.delete(id);
           }
           if (pending.size && prev) {
-            const serverIds = new Set(d.tasks.map((t) => t.id));
+            const serverIds = new Set(workingTasks.map((t) => t.id));
             const carryOver: TasksApiTask[] = [];
             for (const id of pending.keys()) {
               if (serverIds.has(id)) { pending.delete(id); continue; }
               const t = prev.tasks.find((x) => x.id === id);
               if (t) carryOver.push(t);
-              else pending.delete(id); // task left local state (e.g. delete) — stop carrying
+              else pending.delete(id);
             }
             if (carryOver.length) {
               const openExtra = carryOver.filter((t) => !t.completed).length;
               return {
                 ...d,
-                tasks: [...carryOver, ...d.tasks],
-                stats: { ...d.stats, total: d.stats.total + carryOver.length, open: d.stats.open + openExtra },
+                tasks: [...carryOver, ...workingTasks],
+                stats: { ...workingStats, total: workingStats.total + carryOver.length, open: workingStats.open + openExtra },
               };
             }
           }
-          return d;
+          return { ...d, tasks: workingTasks, stats: workingStats };
         });
       }
     } catch {
@@ -330,14 +365,21 @@ function TasksPageInner() {
 
   const optimisticRemove = (taskId: string) => {
     // Clear any optimistic tracking so the merge logic in fetchTasks doesn't
-    // resurrect the row we just removed.
+    // resurrect the row we just removed, and mark it as a pending delete so
+    // the server snapshot can't either (visibility lag).
     optimisticAddsRef.current.delete(taskId);
+    pendingDeletesRef.current.set(taskId, Date.now());
     setData((prev) => {
       if (!prev) return prev;
       // Remove the task AND any of its subtasks from the list
       const removed = new Set<string>();
       removed.add(taskId);
-      prev.tasks.forEach((t) => { if (t.parent_task_id === taskId) removed.add(t.id); });
+      prev.tasks.forEach((t) => {
+        if (t.parent_task_id === taskId) {
+          removed.add(t.id);
+          pendingDeletesRef.current.set(t.id, Date.now());
+        }
+      });
       const remaining = prev.tasks.filter((t) => !removed.has(t.id));
       // Recompute stats so the header count reflects the removal immediately
       const openTasks = remaining.filter((t) => !t.completed);

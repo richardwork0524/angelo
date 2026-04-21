@@ -91,7 +91,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
 
   // Live counter updates — invalidate cache and re-fetch on any entity mutation
   useEffect(() => {
-    function onChanged() {
+    function refetch() {
       invalidateCache('/api/home');
       cachedFetch<{
         handoffs_active?: number;
@@ -112,6 +112,14 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
           tasks: data.tasks_open,
         });
       }).catch(() => { /* silent */ });
+    }
+
+    function onChanged() {
+      // Two-pass: pooled Supabase reads can return a pre-mutation count for
+      // ~100-500ms after a write commits. The first refetch is best-effort,
+      // the second flushes any stale snapshot the gateway just served us.
+      refetch();
+      setTimeout(refetch, 600);
     }
 
     window.addEventListener('tasks-changed', onChanged);
