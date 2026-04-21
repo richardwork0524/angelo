@@ -3,6 +3,10 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { cachedFetch } from '@/lib/cache';
+import pkg from '../../package.json';
+
+const VERSION = pkg.version;
+const BUILD_DATE = process.env.NEXT_PUBLIC_BUILD_DATE ?? '';
 
 interface MountedHandoff {
   id: string;
@@ -131,7 +135,14 @@ export function Topbar({ onToggleNav, navOpen = false }: { onToggleNav?: () => v
           A
         </span>
         Angelo
-        <span style={{ color: 'var(--text3)', fontWeight: 400, fontSize: 'var(--t-sm)', marginLeft: 4 }}>v0.1.0</span>
+        <span
+          className="flex flex-col leading-none"
+          style={{ color: 'var(--text3)', fontWeight: 400, fontSize: 10, marginLeft: 4, fontFamily: 'ui-monospace, monospace' }}
+          title={`Build ${BUILD_DATE}`}
+        >
+          <span>v{VERSION}</span>
+          <span style={{ color: 'var(--text4)', marginTop: 2 }}>{BUILD_DATE}</span>
+        </span>
       </Link>
 
       <div className="flex-1" />

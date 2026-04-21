@@ -214,11 +214,16 @@ export function QuickTaskModal() {
         const j = await res.json().catch(() => ({}));
         throw new Error(j?.error || `HTTP ${res.status}`);
       }
+      const payload = await res.json().catch(() => null);
+      const createdTask = payload?.task ?? null;
       invalidateCache('/api/tasks');
       invalidateCache('/api/home');
       invalidateCache(`/api/projects/${projectKey}`);
       if (mTrimmed) invalidateCache(`/api/missions/${encodeURIComponent(mTrimmed)}`);
-      window.dispatchEvent(new Event('tasks-changed'));
+      // Pass the fresh task on the event so listeners can insert it immediately
+      // without racing the next GET /api/tasks (which can return stale empty results
+      // due to read-after-write timing on Supabase's pooled connections).
+      window.dispatchEvent(new CustomEvent('tasks-changed', { detail: { action: 'added', task: createdTask } }));
       setOpen(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save');

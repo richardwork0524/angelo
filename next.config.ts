@@ -4,6 +4,10 @@ const nextConfig: NextConfig = {
   // Standalone output for smaller deployment bundle
   output: "standalone",
 
+  env: {
+    NEXT_PUBLIC_BUILD_DATE: new Date().toISOString().slice(0, 10),
+  },
+
   // Compiler optimizations
   compiler: {
     // Remove console.log in production

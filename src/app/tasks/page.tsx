@@ -180,16 +180,55 @@ function TasksPageInner() {
     return `/api/tasks?${params.toString()}`;
   }, [project, bucket, priority, mission, showCompleted, search]);
 
+  // Track optimistically-added task IDs so a racing refetch doesn't erase them.
+  // Pooled Supabase reads occasionally don't see a just-committed INSERT for
+  // ~100-500ms, which would otherwise cause the new task to flash and vanish.
+  // Each entry is kept for OPTIMISTIC_TTL_MS; after that the server is trusted,
+  // so we don't re-inject rows the user has since deleted.
+  const OPTIMISTIC_TTL_MS = 3000;
+  const optimisticAddsRef = useRef<Map<string, number>>(new Map());
+  // Discard responses from stale fetches so a slow in-flight request can't
+  // overwrite fresher data (e.g. mount fetch resolving after a mutation refetch).
+  const fetchVersionRef = useRef(0);
   const fetchTasks = useCallback(async (force = false) => {
+    const v = ++fetchVersionRef.current;
     setLoading(true);
     try {
       if (force) invalidateCache('/api/tasks');
       const d = await cachedFetch<TasksApiResponse>(apiUrl, 5000);
-      setData(d);
+      if (v === fetchVersionRef.current) {
+        setData((prev) => {
+          const pending = optimisticAddsRef.current;
+          const now = Date.now();
+          // Prune expired entries
+          for (const [id, ts] of pending) {
+            if (now - ts > OPTIMISTIC_TTL_MS) pending.delete(id);
+          }
+          if (pending.size && prev) {
+            const serverIds = new Set(d.tasks.map((t) => t.id));
+            const carryOver: TasksApiTask[] = [];
+            for (const id of pending.keys()) {
+              if (serverIds.has(id)) { pending.delete(id); continue; }
+              const t = prev.tasks.find((x) => x.id === id);
+              if (t) carryOver.push(t);
+              else pending.delete(id); // task left local state (e.g. delete) — stop carrying
+            }
+            if (carryOver.length) {
+              const openExtra = carryOver.filter((t) => !t.completed).length;
+              return {
+                ...d,
+                tasks: [...carryOver, ...d.tasks],
+                stats: { ...d.stats, total: d.stats.total + carryOver.length, open: d.stats.open + openExtra },
+              };
+            }
+          }
+          return d;
+        });
+      }
     } catch {
-      setData(null);
+      if (v === fetchVersionRef.current) setData(null);
     }
-    setLoading(false);
+    if (v === fetchVersionRef.current) setLoading(false);
   }, [apiUrl]);
 
   // On the very first mount we bypass IDB so a hard-reload always reflects
@@ -203,9 +242,40 @@ function TasksPageInner() {
     fetchTasks(force);
   }, [fetchTasks]);
 
-  // Re-fetch when any external mutation fires (e.g. QuickTaskModal after POST)
+  // Re-fetch when any external mutation fires (e.g. QuickTaskModal after POST).
+  // If the event carries the freshly-created task we inject it immediately so the
+  // user sees it even when the subsequent GET races ahead of the DB write.
   useEffect(() => {
-    function onTasksChanged() { fetchTasks(true); }
+    function onTasksChanged(evt: Event) {
+      const detail = (evt as CustomEvent<{ action?: string; task?: TasksApiTask }>).detail;
+      if (detail?.action === 'added' && detail.task) {
+        const task = detail.task;
+        optimisticAddsRef.current.set(task.id, Date.now());
+        setData((prev) => {
+          if (!prev) return prev;
+          if (prev.tasks.some((t) => t.id === task.id)) return prev;
+          const openTasks = [...prev.tasks, task].filter((t) => !t.completed);
+          const stats = {
+            ...prev.stats,
+            total: prev.tasks.length + 1,
+            open: openTasks.length,
+            p0: openTasks.filter((t) => t.priority === 'P0').length,
+            p1: openTasks.filter((t) => t.priority === 'P1').length,
+            p2: openTasks.filter((t) => t.priority === 'P2').length,
+            this_week: openTasks.filter((t) => t.bucket === 'THIS_WEEK').length,
+            this_month: openTasks.filter((t) => t.bucket === 'THIS_MONTH').length,
+            parked: openTasks.filter((t) => t.bucket === 'PARKED').length,
+          };
+          return { ...prev, tasks: [task, ...prev.tasks], stats };
+        });
+        // Delay the reconciling fetch so the DB has settled. Running it immediately
+        // can race and return a snapshot that doesn't include the new row, which
+        // would clobber the optimistic insert.
+        setTimeout(() => fetchTasks(true), 350);
+        return;
+      }
+      fetchTasks(true);
+    }
     window.addEventListener('tasks-changed', onTasksChanged);
     return () => window.removeEventListener('tasks-changed', onTasksChanged);
   }, [fetchTasks]);
@@ -259,6 +329,9 @@ function TasksPageInner() {
   };
 
   const optimisticRemove = (taskId: string) => {
+    // Clear any optimistic tracking so the merge logic in fetchTasks doesn't
+    // resurrect the row we just removed.
+    optimisticAddsRef.current.delete(taskId);
     setData((prev) => {
       if (!prev) return prev;
       // Remove the task AND any of its subtasks from the list
@@ -341,10 +414,13 @@ function TasksPageInner() {
         invalidateCache('/api/tasks');
         invalidateCache('/api/home');
         window.dispatchEvent(new Event('tasks-changed'));
-        // Refetch to flush stale IndexedDB cache — without this, a page refresh
-        // serves the old IDB entry (which still contains the deleted task) before
-        // the background revalidation completes, making the task "reappear".
+        // The immediate refetch can race ahead of the Supabase delete visibility on
+        // pooled connections and serve a snapshot that still contains the task,
+        // causing it to "flash back" into the list. Schedule a second refetch to
+        // flush any such stale response. The version counter in fetchTasks ensures
+        // only the latest response wins.
         fetchTasks(true);
+        setTimeout(() => fetchTasks(true), 400);
       },
       onError: () => {
         showToast('Delete failed — restoring');
