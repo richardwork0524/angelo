@@ -11,7 +11,7 @@ interface NavItem {
   label: string;
   href: string;
   icon: string;
-  countKey?: 'handoffs' | 'notes' | 'entities' | 'vault' | 'sessions' | 'system' | 'tasks';
+  countKey?: 'handoffs' | 'notes' | 'entities' | 'sessions' | 'system' | 'tasks';
 }
 
 const SECTIONS: { title: string; items: NavItem[] }[] = [
@@ -33,7 +33,6 @@ const SECTIONS: { title: string; items: NavItem[] }[] = [
   {
     title: 'Meta',
     items: [
-      { key: 'vault',    label: 'Vault',    href: '/vault',    icon: '◱', countKey: 'vault' },
       { key: 'sessions', label: 'Sessions', href: '/sessions', icon: '◔', countKey: 'sessions' },
       { key: 'system',   label: 'System',   href: '/system',   icon: '◊', countKey: 'system' },
     ],
@@ -44,7 +43,6 @@ interface SidebarCounts {
   handoffs?: number;
   notes?: number;
   entities?: number;
-  vault?: number;
   sessions?: number;
   system?: number;
   tasks?: number;
@@ -67,7 +65,6 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
           sessions_total?: number;
           entities_total?: number;
           system_issues?: number;
-          vault_files?: number;
           tasks_open?: number;
         }>('/api/home', 30000);
         if (cancelled) return;
@@ -77,7 +74,6 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
           sessions: data.sessions_total,
           entities: data.entities_total,
           system: data.system_issues,
-          vault: data.vault_files,
           tasks: data.tasks_open,
         });
       } catch {
@@ -99,7 +95,6 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
         sessions_total?: number;
         entities_total?: number;
         system_issues?: number;
-        vault_files?: number;
         tasks_open?: number;
       }>('/api/home', 30000).then((data) => {
         setCounts({
@@ -108,7 +103,6 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
           sessions: data.sessions_total,
           entities: data.entities_total,
           system: data.system_issues,
-          vault: data.vault_files,
           tasks: data.tasks_open,
         });
       }).catch(() => { /* silent */ });

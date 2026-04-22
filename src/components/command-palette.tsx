@@ -11,7 +11,6 @@ const NAV_PAGES = [
   { label: 'Tasks',     href: '/tasks',     icon: '✓', group: 'Pages' },
   { label: 'Entities',  href: '/entities',  icon: '◈', group: 'Pages' },
   { label: 'Notes',     href: '/notes',     icon: '✎', group: 'Pages' },
-  { label: 'Vault',     href: '/vault',     icon: '◱', group: 'Pages' },
   { label: 'Sessions',  href: '/sessions',  icon: '◔', group: 'Pages' },
   { label: 'System',    href: '/system',    icon: '◊', group: 'Pages' },
 ];

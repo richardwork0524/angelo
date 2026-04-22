@@ -1,10 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
 import { cachedFetch } from '@/lib/cache';
 
-type SystemKey = 'hook' | 'memory' | 'taxonomy' | 'naming' | 'skill' | 'deploy';
+type SystemKey = 'hook' | 'skill' | 'deploy';
 
 interface SystemResponse {
   hook: {
@@ -30,50 +29,37 @@ interface CardMeta {
 }
 
 const CARDS: CardMeta[] = [
-  { key: 'hook',     icon: '🎣', name: 'Hook system',     tone: 'var(--warn)',      desc: 'Zero-token shell scripts on Claude Code events. No tokens consumed unless EOS is verbose.' },
-  { key: 'deploy',   icon: '🚀', name: 'Deploy system',   tone: 'var(--success)',   desc: 'Git-tracked code at /Users/richard/code/<project>/. Vercel auto-deploy from main.' },
-  { key: 'skill',    icon: '🔧', name: 'Skill system',    tone: 'var(--primary-2)', desc: 'Reusable capability packages in Skill/skills/. Vault is source of truth; synced to Code / Chat / Cowork.' },
-  { key: 'memory',   icon: '🧠', name: 'Memory system',   tone: 'var(--vault)',     desc: '3-layer: local MD files + Supabase angelo_memories + pgvector embeddings. Semantic recall with freshness decay.' },
-  { key: 'taxonomy', icon: '🗂',  name: 'Taxonomy system', tone: 'var(--info)',      desc: 'Canonical enums (R27). Enforced via Supabase CHECK constraints. Changes versioned here.' },
-  { key: 'naming',   icon: '🏷',  name: 'Naming system',   tone: 'var(--pink)',      desc: 'Hierarchical IDs. Format: {PROJECT}-{MODULE}-{TYPE}{NNN}[-T{NN}][-S{NN}]. project_key as Supabase FK root.' },
+  { key: 'hook',   icon: '🎣', name: 'Hook system',   tone: 'var(--warn)',      desc: 'Zero-token shell scripts on Claude Code events. No tokens consumed unless EOS is verbose.' },
+  { key: 'deploy', icon: '🚀', name: 'Deploy system', tone: 'var(--success)',   desc: 'Git-tracked code at /Users/richard/code/<project>/. Vercel auto-deploy from main.' },
+  { key: 'skill',  icon: '🔧', name: 'Skill system',  tone: 'var(--primary-2)', desc: 'Reusable capability packages in Skill/skills/. Vault is source of truth; synced to Code / Chat / Cowork.' },
 ];
 
-const TAXONOMY_ENUMS: Record<string, string[]> = {
-  'Statuses (project lifecycle)': ['ACTIVE', 'BUILDING', 'PLANNING', 'TESTING', 'DEPLOYED', 'ARCHIVED', 'BLOCKED', 'IDEA'],
-  'Task types':                   ['TASK', 'BUG', 'IDEA', 'BLOCKER', 'URGENT', 'OWNER_ACTION', 'MISSION', 'ROOT', 'VERSION', 'LOG'],
-  'Priorities':                   ['P0', 'P1', 'P2'],
-  'Cowork job statuses':          ['PENDING', 'RUNNING', 'REVIEW', 'DONE', 'PARTIAL', 'BLOCKED_HUMAN', 'CHAIN_CONTINUE'],
-  'Note types':                   ['GAP', 'IDEA', 'OBSERVATION', 'REVISIT'],
-  'Session event types':          ['decision', 'note', 'milestone', 'rollback', 'context_change', 'deploy', 'code_push', 'deploy_verify', 'webhook'],
-  'Surfaces':                     ['CHAT (C)', 'CODE (X)', 'COWORK (W)', 'MOBILE (M)'],
-  'Handoff purposes':             ['CREATE', 'DEBUG', 'UPDATE'],
-};
-
-const PROJECT_CODES: { code: string; name: string; type: string }[] = [
-  { code: 'CID', name: 'Cid-OS',             type: 'shell' },
-  { code: 'ANG', name: 'Angelo',             type: 'app' },
-  { code: 'RUB', name: 'Rubii',              type: 'company' },
-  { code: 'RNA', name: 'Rinoa-OS',           type: 'meta' },
-  { code: 'IDR', name: 'Idle Ragnarok Pet',  type: 'game' },
-  { code: 'YHG', name: 'Yhang.ai',           type: 'app' },
-  { code: 'GHM', name: 'Golden Home',        type: 'company' },
-  { code: 'HKA', name: 'Hookka',             type: 'company' },
-  { code: 'CON', name: 'The Conts',          type: 'company' },
-  { code: 'CAR', name: 'Carres',             type: 'company' },
-];
-
-const TYPE_CODES: { code: string; name: string; ex: string }[] = [
-  { code: 'H',   name: 'Handoff',          ex: 'ANG-UI-H014' },
-  { code: 'M',   name: 'Mission',          ex: 'ANG-UI-M019' },
-  { code: 'T',   name: 'Task',             ex: 'ANG-UI-M019-T01' },
-  { code: 'S',   name: 'Subtask',          ex: 'ANG-UI-M019-T01-S01' },
-  { code: 'F',   name: 'Feature',          ex: 'CID-FR-F004' },
-  { code: 'FN',  name: 'Function',         ex: 'CID-FR-F004-FN02' },
-  { code: 'MEC', name: 'Game mechanic',    ex: 'IDR-MEC01' },
-  { code: 'CSV', name: 'CSV schema',       ex: 'IDR-CSV01' },
-  { code: 'SES', name: 'Session (global)', ex: 'SES-097' },
-  { code: 'NOT', name: 'Note (global)',    ex: 'NOT-042' },
-  { code: 'VLT', name: 'Vault (global)',   ex: 'VLT-042' },
+const CANONICAL_REFS: { label: string; href: string; desc: string }[] = [
+  {
+    label: 'standing-rules-index.html',
+    href: 'file:///Users/richard/My%20Drive/Rinoa-OS/GUIDE/system/standing-rules-index.html',
+    desc: 'Standing rules (R1–R29)',
+  },
+  {
+    label: 'taxonomy.md',
+    href: 'file:///Users/richard/My%20Drive/Rinoa-OS/GUIDE/taxonomy/taxonomy.md',
+    desc: 'Canonical enums · status / type / priority',
+  },
+  {
+    label: 'rinoa-os-map.html',
+    href: 'file:///Users/richard/My%20Drive/Rinoa-OS/GUIDE/system/rinoa-os-map.html',
+    desc: 'System map · every module + project',
+  },
+  {
+    label: 'cli-reference.html',
+    href: 'file:///Users/richard/My%20Drive/Rinoa-OS/GUIDE/system/cli-reference.html',
+    desc: 'Zero-token shell CLIs',
+  },
+  {
+    label: 'deploy-protocol.html',
+    href: 'file:///Users/richard/My%20Drive/Rinoa-OS/GUIDE/system/deploy-protocol.html',
+    desc: 'LIVE deploy steps',
+  },
 ];
 
 function relativeTime(iso: string | null): string {
@@ -111,12 +97,9 @@ export default function SystemPage() {
 
   function statFor(key: SystemKey): { value: string; sub: string } {
     if (!data) return { value: '…', sub: '' };
-    if (key === 'hook')     return { value: `${data.hook.distinct_24h}`, sub: `hooks active · ${data.hook.total_7d} events 7d` };
-    if (key === 'deploy')   return { value: `${data.deploy.total}`, sub: `deployments · last ${data.deploy.last_deploy_date || '—'}` };
-    if (key === 'skill')    return { value: `${data.skill.total}`, sub: `${data.skill.drift} drift · ${data.skill.undeployed} undeployed` };
-    if (key === 'memory')   return { value: '30+', sub: 'memories · pgvector-embedded' };
-    if (key === 'taxonomy') return { value: `${Object.keys(TAXONOMY_ENUMS).length}`, sub: 'enum groups · 50+ values' };
-    if (key === 'naming')   return { value: `${PROJECT_CODES.length}+${TYPE_CODES.length}`, sub: 'project · type codes' };
+    if (key === 'hook')   return { value: `${data.hook.distinct_24h}`, sub: `hooks active · ${data.hook.total_7d} events 7d` };
+    if (key === 'deploy') return { value: `${data.deploy.total}`, sub: `deployments · last ${data.deploy.last_deploy_date || '—'}` };
+    if (key === 'skill')  return { value: `${data.skill.total}`, sub: `${data.skill.drift} drift · ${data.skill.undeployed} undeployed` };
     return { value: '—', sub: '' };
   }
 
@@ -127,7 +110,7 @@ export default function SystemPage() {
           <h1 className="font-semibold tracking-tight" style={{ fontSize: 'var(--t-h2)' }}>
             System
             <span className="ml-2 font-normal" style={{ color: 'var(--text3)', fontSize: 'var(--t-body)' }}>
-              {CARDS.length} core layers · click a card to drill
+              live operational dashboard · click a card to drill
             </span>
           </h1>
           {data?.session.last_at && (
@@ -195,8 +178,9 @@ export default function SystemPage() {
           </div>
         )}
 
-        {/* Inline detail */}
         {openKey && data && <SystemDetail systemKey={openKey} data={data} />}
+
+        <CanonicalRefCard />
       </div>
     </div>
   );
@@ -218,9 +202,6 @@ function SystemDetail({ systemKey, data }: { systemKey: SystemKey; data: SystemR
       {systemKey === 'hook' && <HookDetail data={data.hook} />}
       {systemKey === 'deploy' && <DeployDetail data={data.deploy} />}
       {systemKey === 'skill' && <SkillDetail data={data.skill} />}
-      {systemKey === 'memory' && <MemoryDetail />}
-      {systemKey === 'taxonomy' && <TaxonomyDetail />}
-      {systemKey === 'naming' && <NamingDetail />}
     </div>
   );
 }
@@ -328,130 +309,65 @@ function SkillDetail({ data }: { data: SystemResponse['skill'] }) {
   );
 }
 
-function MemoryDetail() {
+function CanonicalRefCard() {
   return (
-    <>
-      <SectionTitle>About</SectionTitle>
-      <p style={{ fontSize: 'var(--t-sm)', color: 'var(--text2)', lineHeight: 1.6, margin: 0 }}>
-        3-layer memory: local markdown files in the vault, synced to Supabase <code>angelo_memories</code>,
-        embedded into pgvector for semantic recall with freshness decay. Types: <b>user</b>, <b>feedback</b>,
-        <b> project</b>, <b>reference</b>. Indexed by <code>MEMORY.md</code>.
-      </p>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+        padding: 20,
+        background: 'var(--card)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--r-lg)',
+      }}
+    >
       <div
         style={{
           fontSize: 'var(--t-tiny)',
           color: 'var(--text3)',
-          fontFamily: 'ui-monospace, monospace',
-          background: 'var(--bg)',
-          padding: '8px 12px',
-          borderRadius: 'var(--r-sm)',
-          overflow: 'auto',
+          textTransform: 'uppercase',
+          letterSpacing: '.06em',
+          fontWeight: 600,
         }}
       >
-        .claude/projects/-Users-richard-My-Drive-Rinoa-OS/memory/
+        Canonical references
       </div>
-    </>
-  );
-}
-
-function TaxonomyDetail() {
-  return (
-    <>
-      <SectionTitle count={Object.keys(TAXONOMY_ENUMS).length}>Canonical enums</SectionTitle>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {Object.entries(TAXONOMY_ENUMS).map(([title, vals]) => (
-          <div key={title}>
-            <div style={{ fontSize: 'var(--t-tiny)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', fontWeight: 600, marginBottom: 6 }}>
-              {title}
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 6 }}>
-              {vals.map((v) => (
-                <div
-                  key={v}
-                  style={{
-                    background: 'var(--bg)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 'var(--r-sm)',
-                    padding: '6px 10px',
-                    fontSize: 'var(--t-tiny)',
-                    fontFamily: 'ui-monospace, monospace',
-                    color: 'var(--text)',
-                  }}
-                >
-                  {v}
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
+      <div style={{ fontSize: 'var(--t-sm)', color: 'var(--text2)', lineHeight: 1.5 }}>
+        System documentation lives as HTML in the vault. These are the source-of-truth renders — any
+        taxonomy, naming, or architecture question answered here is authoritative.
       </div>
-    </>
-  );
-}
-
-function NamingDetail() {
-  return (
-    <>
-      <SectionTitle count={PROJECT_CODES.length}>Project codes</SectionTitle>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 6 }}>
-        {PROJECT_CODES.map((p) => (
-          <div
-            key={p.code}
-            style={{
-              background: 'var(--bg)',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--r-sm)',
-              padding: '8px 10px',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              gap: 8,
-            }}
-          >
-            <span style={{ fontFamily: 'ui-monospace, monospace', fontWeight: 600, color: 'var(--primary-2)' }}>
-              {p.code}
-            </span>
-            <span style={{ fontSize: 'var(--t-tiny)', color: 'var(--text3)', textAlign: 'right' }}>
-              {p.name} · {p.type}
-            </span>
-          </div>
-        ))}
-      </div>
-      <SectionTitle count={TYPE_CODES.length}>Type codes</SectionTitle>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        {TYPE_CODES.map((t) => (
-          <div
-            key={t.code}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
+        {CANONICAL_REFS.map((r) => (
+          <a
+            key={r.href}
+            href={r.href}
+            target="_blank"
+            rel="noopener noreferrer"
             style={{
               display: 'grid',
-              gridTemplateColumns: 'auto 1fr auto',
+              gridTemplateColumns: 'minmax(220px, auto) 1fr',
               gap: 12,
               padding: '8px 12px',
               background: 'var(--bg)',
               borderRadius: 'var(--r-sm)',
               alignItems: 'center',
               fontSize: 'var(--t-sm)',
+              textDecoration: 'none',
+              color: 'var(--text)',
+              transition: 'background 120ms',
             }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--card-alt)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--bg)'; }}
           >
-            <span
-              style={{
-                fontFamily: 'ui-monospace, monospace',
-                fontSize: 'var(--t-tiny)',
-                fontWeight: 600,
-                color: 'var(--primary-2)',
-                minWidth: 36,
-              }}
-            >
-              {t.code}
+            <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 'var(--t-tiny)', color: 'var(--primary-2)' }}>
+              {r.label}
             </span>
-            <span style={{ color: 'var(--text)' }}>{t.name}</span>
-            <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 'var(--t-tiny)', color: 'var(--text3)' }}>
-              {t.ex}
-            </span>
-          </div>
+            <span style={{ color: 'var(--text3)', fontSize: 'var(--t-tiny)' }}>{r.desc}</span>
+          </a>
         ))}
       </div>
-    </>
+    </div>
   );
 }
 
