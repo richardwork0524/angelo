@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { PreviewPopup, PopupHead, PopupBody, PopupStats, PopupFooter, PopupBtn } from '@/components/preview-popup';
+import { StatusBadge } from '@/components/status-badge';
+import { PurposeChip, purposeFromEntry } from '@/components/handoff-card';
 import { patchHandoff } from '@/lib/mutate';
 import type { Handoff } from '@/lib/types';
 
@@ -107,60 +109,152 @@ export function HandoffPopup({ handoff: handoffProp, open, onClose, onUpdate }: 
       />
 
       <PopupBody>
-      <div className="px-5 py-3.5">
-        <PopupStats stats={[
-          { label: 'Done', value: String(handoff.sections_completed), color: 'var(--green)' },
-          { label: 'Total', value: String(handoff.sections_total) },
-          { label: 'Progress', value: `${pct}%`, color: pct === 100 ? 'var(--green)' : 'var(--accent)' },
-          { label: 'Status', value: handoff.status.replace('_', ' '), color: sc.text },
-        ]} />
+      <div className="px-5 py-3.5" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
-        {/* Progress bar */}
-        <div className="w-full h-1.5 rounded-full bg-[var(--card)] mb-3 overflow-hidden">
-          <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: sc.text }} />
+        {/* Badges row — purpose + status + entry_point + scope_type + version */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <PurposeChip purpose={handoff.purpose ?? purposeFromEntry(handoff.entry_point)} />
+          <StatusBadge status={handoff.status} />
+          {handoff.entry_point && (
+            <span
+              style={{
+                fontSize: 'var(--t-tiny)',
+                fontWeight: 600,
+                padding: '2px 8px',
+                borderRadius: 'var(--r-sm)',
+                background: 'var(--primary-dim)',
+                color: 'var(--primary-2)',
+                letterSpacing: '.04em',
+              }}
+            >
+              {handoff.entry_point}
+            </span>
+          )}
+          <span
+            style={{
+              fontSize: 'var(--t-tiny)',
+              textTransform: 'uppercase',
+              letterSpacing: '.04em',
+              fontWeight: 600,
+              color: 'var(--text3)',
+            }}
+          >
+            {handoff.scope_type}
+          </span>
+          {handoff.version && (
+            <span style={{ fontFamily: 'ui-monospace', fontSize: 'var(--t-tiny)', color: 'var(--text3)' }}>
+              {handoff.version}
+            </span>
+          )}
+          {handoff.is_mounted && (
+            <span
+              style={{
+                fontSize: 9,
+                fontWeight: 700,
+                letterSpacing: '.08em',
+                padding: '2px 8px',
+                borderRadius: 4,
+                background: 'var(--primary)',
+                color: '#fff',
+              }}
+            >
+              MOUNTED
+            </span>
+          )}
         </div>
 
-        {/* Sections remaining */}
+        {/* Progress */}
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+            <span style={{ fontSize: 'var(--t-tiny)', color: 'var(--text3)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '.06em' }}>
+              Progress
+            </span>
+            <span style={{ fontSize: 'var(--t-tiny)', color: 'var(--text2)', fontVariantNumeric: 'tabular-nums' }}>
+              {handoff.sections_completed}/{handoff.sections_total} · {pct}%
+            </span>
+          </div>
+          <div style={{ height: 6, borderRadius: 999, background: 'var(--card-alt)', overflow: 'hidden' }}>
+            <div
+              style={{
+                height: '100%',
+                width: `${pct}%`,
+                background: pct === 100
+                  ? 'var(--success)'
+                  : 'linear-gradient(90deg, var(--primary), var(--primary-2))',
+                transition: 'width .3s ease',
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Sections checklist */}
         {handoff.sections_remaining && handoff.sections_remaining.length > 0 && (
-          <div className="space-y-1 mb-3 max-h-[200px] overflow-y-auto">
-            <p className="text-[10px] font-semibold text-[var(--text3)] uppercase tracking-wider mb-1">Sections</p>
-            {handoff.sections_remaining.map((s, i) => (
-              <div key={i} className="flex items-start gap-2 text-[12px] leading-[1.5]">
-                <span className="shrink-0 mt-0.5">
-                  {s.status === 'done'
-                    ? <span style={{ color: 'var(--green)' }}>&#x2713;</span>
-                    : <span style={{ color: 'var(--text3)' }}>&#x25CB;</span>
-                  }
-                </span>
-                <span className={s.status === 'done' ? 'text-[var(--text3)] line-through' : 'text-[var(--text)]'}>
-                  {s.name}
-                </span>
-              </div>
-            ))}
+          <div>
+            <p style={{ fontSize: 'var(--t-tiny)', fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>
+              Sections
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 200, overflowY: 'auto' }}>
+              {handoff.sections_remaining.map((s, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--t-sm)' }}>
+                  <span
+                    style={{
+                      width: 14,
+                      height: 14,
+                      borderRadius: 3,
+                      border: '1px solid var(--border)',
+                      background: s.status === 'done' ? 'var(--success)' : 'transparent',
+                      color: '#fff',
+                      fontSize: 9,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {s.status === 'done' ? '✓' : ''}
+                  </span>
+                  <span
+                    style={{
+                      color: s.status === 'done' ? 'var(--text3)' : 'var(--text)',
+                      textDecoration: s.status === 'done' ? 'line-through' : 'none',
+                      fontSize: 'var(--t-sm)',
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {s.name}
+                  </span>
+                  {s.notes && (
+                    <span style={{ fontSize: 'var(--t-tiny)', color: 'var(--text4)', marginLeft: 'auto' }}>
+                      {s.notes}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
         {/* Notes */}
         {handoff.notes && (
-          <p className="text-[12px] text-[var(--text2)] leading-[1.5] mb-3">{handoff.notes}</p>
+          <div>
+            <p style={{ fontSize: 'var(--t-tiny)', fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>
+              Notes
+            </p>
+            <p style={{ fontSize: 'var(--t-sm)', color: 'var(--text2)', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+              {handoff.notes}
+            </p>
+          </div>
         )}
 
-        {/* Tags */}
-        <div className="flex gap-1 flex-wrap">
-          <span className="text-[9px] font-semibold px-1.5 py-[1px] rounded-[4px]" style={{ background: sc.bg, color: sc.text }}>
-            {handoff.scope_type}
-          </span>
-          {handoff.entry_point && (
-            <span className="text-[9px] font-semibold px-1.5 py-[1px] rounded-[4px]" style={{ background: 'var(--purple-dim)', color: 'var(--purple)' }}>
-              {handoff.entry_point}
-            </span>
-          )}
-          {handoff.source === 'auto' && (
-            <span className="text-[9px] font-semibold px-1.5 py-[1px] rounded-[4px]" style={{ background: 'var(--card)', color: 'var(--text3)' }}>
+        {/* Source tag */}
+        {handoff.source === 'auto' && (
+          <div>
+            <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 4, background: 'var(--card)', color: 'var(--text3)' }}>
               auto
             </span>
-          )}
-        </div>
+          </div>
+        )}
+
       </div>
       </PopupBody>
 

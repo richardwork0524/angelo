@@ -10,6 +10,7 @@ import { HeroCard, TierLabel } from '@/components/hero-card';
 import { ShortcutPill } from '@/components/shortcut-pill';
 import { useHotkeys } from '@/hooks/use-hotkeys';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
+import { HandoffPopup } from '@/components/popups/handoff-popup';
 import type { Handoff } from '@/lib/types';
 
 const DAILY_COST_CAP = 6;
@@ -123,6 +124,7 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [topTask, setTopTask] = useState<TopTask | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [selectedHandoff, setSelectedHandoff] = useState<Handoff | null>(null);
 
   function showToast(msg: string) {
     setToast(msg);
@@ -341,7 +343,7 @@ export default function HomePage() {
             ) : (
               <div className="flex flex-col gap-2">
                 {recent.map((h) => (
-                  <HandoffRow key={h.id} handoff={h} onClick={() => router.push('/handoffs')} />
+                  <HandoffRow key={h.id} handoff={h} onClick={() => setSelectedHandoff(h)} />
                 ))}
               </div>
             )}
@@ -397,6 +399,14 @@ export default function HomePage() {
           {toast}
         </div>
       )}
+
+      {/* Handoff popup — opened by clicking a recent handoff row */}
+      <HandoffPopup
+        handoff={selectedHandoff}
+        open={selectedHandoff !== null}
+        onClose={() => setSelectedHandoff(null)}
+        onUpdate={fetchHome}
+      />
     </div>
   );
 }
