@@ -338,7 +338,12 @@ function TasksPageInner() {
   const selectedTask = useMemo<DetailTask | null>(() => {
     if (!selectedTaskId || !data) return null;
     const raw = data.tasks.find((t) => t.id === selectedTaskId);
-    return raw ? toDetailTask(raw) : null;
+    if (raw) return toDetailTask(raw);
+    // If the task is gone from data (optimistic remove / stale refetch), clear the
+    // selection so the detail panel doesn't show a dead/blank state (T3/T5/T7).
+    // Schedule the clear on the next tick to avoid setState-during-render.
+    setTimeout(() => setSelectedTaskId(null), 0);
+    return null;
   }, [selectedTaskId, data]);
 
   const selectedSubtasks = useMemo<DetailTask[]>(() => {
@@ -405,7 +410,9 @@ function TasksPageInner() {
       invalidateCache('/api/tasks');
       invalidateCache('/api/home');
       window.dispatchEvent(new Event('tasks-changed'));
-      fetchTasks(true);
+      // T6/T8: 2-step pattern — dispatch event immediately (sidebar updates in same
+      // frame), then delay reconciling refetch 200ms so UI transition feels smooth.
+      setTimeout(() => fetchTasks(true), 200);
     },
     onError: () => {
       showToast('Sync failed — retrying');
@@ -449,20 +456,19 @@ function TasksPageInner() {
   function handleDelete(taskId: string) {
     optimisticRemove(taskId);
     setSelectedTaskId(null);
+    // T8: Dispatch tasks-changed IMMEDIATELY after optimistic removal so the sidebar
+    // counter updates in the same frame — don't wait for DB round-trip.
+    invalidateCache('/api/tasks');
+    invalidateCache('/api/home');
+    window.dispatchEvent(new Event('tasks-changed'));
     bgMutate({
       request: () => fetch(`/api/tasks/${taskId}`, { method: 'DELETE' }),
       onSuccess: () => {
         showToast('Task deleted');
-        invalidateCache('/api/tasks');
-        invalidateCache('/api/home');
-        window.dispatchEvent(new Event('tasks-changed'));
-        // The immediate refetch can race ahead of the Supabase delete visibility on
-        // pooled connections and serve a snapshot that still contains the task,
-        // causing it to "flash back" into the list. Schedule a second refetch to
-        // flush any such stale response. The version counter in fetchTasks ensures
-        // only the latest response wins.
-        fetchTasks(true);
-        setTimeout(() => fetchTasks(true), 400);
+        // 2-step: delay reconciling refetch 200ms; second pass at 500ms to flush any
+        // stale Supabase pooled-read snapshot that still contains the deleted row.
+        setTimeout(() => fetchTasks(true), 200);
+        setTimeout(() => fetchTasks(true), 500);
       },
       onError: () => {
         showToast('Delete failed — restoring');
@@ -517,20 +523,86 @@ function TasksPageInner() {
   async function handleAddSubtask(parentId: string, text: string) {
     const parent = data?.tasks.find((t) => t.id === parentId);
     if (!parent) return;
-    bgMutate({
-      request: () =>
-        fetch('/api/tasks', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            project_key: parent.project_key,
-            text,
-            bucket: parent.bucket || 'THIS_WEEK',
-            parent_task_id: parentId,
-          }),
-        }),
-      ...syncOpts('Subtask added'),
+
+    // T4: Optimistic append — create a tmp row immediately so the subtask appears
+    // without waiting for the DB round-trip (~1-2s).
+    const tmpId = `tmp_${Date.now()}`;
+    const now = new Date().toISOString();
+    const tmpSubtask: TasksApiTask = {
+      id: tmpId,
+      project_key: parent.project_key,
+      text,
+      description: null,
+      bucket: parent.bucket || 'THIS_WEEK',
+      priority: null,
+      surface: null,
+      is_owner_action: null,
+      mission: null,
+      version: null,
+      task_code: null,
+      progress: null,
+      parent_task_id: parentId,
+      completed: false,
+      log: null,
+      sort_order: null,
+      updated_at: now,
+      created_at: now,
+    };
+    optimisticAddsRef.current.set(tmpId, Date.now());
+    setData((prev) => {
+      if (!prev) return prev;
+      return { ...prev, tasks: [...prev.tasks, tmpSubtask] };
     });
+
+    // T4: Fire POST in the background; reconcile tmp row on response.
+    // We handle this directly (not via bgMutate) because we need the Response body
+    // to swap the tmp id for the real DB-assigned id.
+    fetch('/api/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        project_key: parent.project_key,
+        text,
+        bucket: parent.bucket || 'THIS_WEEK',
+        parent_task_id: parentId,
+      }),
+    })
+      .then(async (res) => {
+        optimisticAddsRef.current.delete(tmpId);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const payload = await res.json().catch(() => null);
+        const realTask: TasksApiTask | null = payload?.task ?? null;
+        if (realTask) {
+          setData((prev) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              tasks: prev.tasks.map((t) => (t.id === tmpId ? realTask : t)),
+            };
+          });
+        } else {
+          // No payload shape — strip tmp and let reconciling fetch bring the real row
+          setData((prev) => {
+            if (!prev) return prev;
+            return { ...prev, tasks: prev.tasks.filter((t) => t.id !== tmpId) };
+          });
+        }
+        showToast('Subtask added');
+        invalidateCache('/api/tasks');
+        invalidateCache('/api/home');
+        // 2-step: dispatch event immediately (sidebar counter), delay reconciling fetch
+        window.dispatchEvent(new Event('tasks-changed'));
+        setTimeout(() => fetchTasks(true), 200);
+      })
+      .catch(() => {
+        // Roll back the tmp row and surface an error toast
+        optimisticAddsRef.current.delete(tmpId);
+        setData((prev) => {
+          if (!prev) return prev;
+          return { ...prev, tasks: prev.tasks.filter((t) => t.id !== tmpId) };
+        });
+        showToast('Failed to add subtask — please retry');
+      });
   }
 
   function clearFilters() {
@@ -591,22 +663,55 @@ function TasksPageInner() {
               )}
             </span>
           </h1>
-          {!isDesktop && (
-            <button
-              onClick={() => setShowMobileFilters((v) => !v)}
-              style={{
-                padding: '6px 12px',
-                fontSize: 'var(--t-sm)',
-                background: activeFilterCount > 0 ? 'var(--primary-dim)' : 'var(--card)',
-                color: activeFilterCount > 0 ? 'var(--primary-2)' : 'var(--text2)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--r-sm)',
-                cursor: 'pointer',
-              }}
-            >
-              Filters {activeFilterCount > 0 && `(${activeFilterCount})`}
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {/* T1: Desktop add-task button — dispatches quick-task event that QuickTaskModal listens for */}
+            {isDesktop && (
+              <button
+                onClick={() =>
+                  window.dispatchEvent(
+                    new CustomEvent('quick-task', {
+                      detail: { project_key: project || undefined },
+                    })
+                  )
+                }
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '7px 14px',
+                  fontSize: 'var(--t-sm)',
+                  fontWeight: 500,
+                  background: 'var(--primary)',
+                  color: '#fff',
+                  border: '1px solid var(--primary)',
+                  borderRadius: 'var(--r-sm)',
+                  cursor: 'pointer',
+                  transition: 'opacity .15s',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.88'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
+              >
+                <span style={{ fontSize: 16, lineHeight: 1 }}>＋</span>
+                Add Task
+              </button>
+            )}
+            {!isDesktop && (
+              <button
+                onClick={() => setShowMobileFilters((v) => !v)}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: 'var(--t-sm)',
+                  background: activeFilterCount > 0 ? 'var(--primary-dim)' : 'var(--card)',
+                  color: activeFilterCount > 0 ? 'var(--primary-2)' : 'var(--text2)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--r-sm)',
+                  cursor: 'pointer',
+                }}
+              >
+                Filters {activeFilterCount > 0 && `(${activeFilterCount})`}
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Filter bar (desktop: always visible; mobile: togglable) */}
