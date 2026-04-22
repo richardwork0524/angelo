@@ -73,7 +73,7 @@ export async function GET() {
     }
 
     const entities: EntitySummary[] = allProjects
-      .filter((p) => p.entity_type !== null)
+      .filter((p) => p.entity_type !== null && p.status !== 'RETIRED')
       .map((p) => {
         const keys = descendantKeys(p.child_key);
         let tasksOpen = 0;
