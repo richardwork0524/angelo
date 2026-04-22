@@ -173,20 +173,22 @@ export default function HomePage() {
 
   function handleUnmount() {
     if (!mounted) return;
-    // Optimistic: clear immediately, show message, sync in background
-    const unmountedId = mounted.id;
+    // Optimistic: clear from local home data immediately, show toast
     setData((prev) => prev ? { ...prev, mounted_handoffs: [] } : prev);
     showToast('Handoff unmounted');
-    setTimeout(() => {
-      patchHandoff(unmountedId, { is_mounted: false }, {
-        onSuccess: () => {
-          invalidateCache(`/api/handoff/${unmountedId}`);
-          invalidateCache('/api/handoffs');
-          window.dispatchEvent(new Event('handoffs-changed'));
-          fetchHome();
-        },
-      });
-    }, 500);
+    // patchHandoff (full-object form) handles cache-level optimism on /api/handoffs
+    patchHandoff(mounted, { is_mounted: false }, {
+      onSuccess: () => {
+        invalidateCache(`/api/handoff/${mounted.id}`);
+        window.dispatchEvent(new Event('handoffs-changed'));
+        fetchHome();
+      },
+      onError: () => {
+        // Restore local home state on failure
+        setData((prev) => prev ? { ...prev, mounted_handoffs: [mounted] } : prev);
+        showToast('Failed to unmount handoff');
+      },
+    });
   }
 
   function handleNewNote() {

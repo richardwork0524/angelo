@@ -397,6 +397,18 @@ export function removeFromCache(
   }).catch(() => { /* best-effort */ });
 }
 
+/**
+ * Synchronously read current cached data from the in-memory hot cache only.
+ * Returns undefined if not present or still loading (has pending promise).
+ * Used by mutateOptimistic to snapshot before optimistic writes.
+ */
+export function getCachedData(cacheKey: string): unknown | undefined {
+  const memKey = `GET:${cacheKey}`;
+  const entry = cache.get(memKey);
+  if (entry && !entry.promise) return entry.data;
+  return undefined;
+}
+
 /** Invalidate a specific cache key or all keys matching a prefix */
 export function invalidateCache(urlPrefix?: string): void {
   if (!urlPrefix) {

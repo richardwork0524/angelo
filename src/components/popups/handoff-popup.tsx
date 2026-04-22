@@ -47,7 +47,7 @@ export function HandoffPopup({ handoff: handoffProp, open, onClose, onUpdate }: 
   function handleAction(newStatus: string) {
     if (acting) return;
     setActing(true);
-    patchHandoff(localHandoff!.id, newStatus, {
+    patchHandoff(localHandoff!, newStatus, {
       onSuccess: () => { setActing(false); window.dispatchEvent(new Event('handoffs-changed')); onUpdate?.(); onClose(); },
       onError: () => { setActing(false); },
     });
@@ -59,11 +59,11 @@ export function HandoffPopup({ handoff: handoffProp, open, onClose, onUpdate }: 
     // Optimistic local flip so the popup reflects the new state immediately
     setLocalHandoff((h) => (h ? { ...h, is_mounted: next } : h));
     setActing(true);
-    patchHandoff(localHandoff!.id, { is_mounted: next }, {
+    patchHandoff(localHandoff!, { is_mounted: next }, {
       onSuccess: () => { setActing(false); window.dispatchEvent(new Event('handoffs-changed')); onUpdate?.(); },
       onError: () => {
         setActing(false);
-        // Revert on failure
+        // Revert popup local state on failure (cache rollback handled by mutateOptimistic)
         setLocalHandoff((h) => (h ? { ...h, is_mounted: !next } : h));
       },
     });

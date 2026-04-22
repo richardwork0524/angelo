@@ -99,7 +99,7 @@ export default function HandoffDetailPage({ params }: { params: Promise<{ id: st
   function handleToggleMount() {
     if (!handoff || acting) return;
     setActing(true);
-    patchHandoff(handoff.id, { is_mounted: !handoff.is_mounted }, {
+    patchHandoff(handoff, { is_mounted: !handoff.is_mounted }, {
       onSuccess: () => { setActing(false); refresh(); },
       onError: () => { setActing(false); },
     });
@@ -108,7 +108,7 @@ export default function HandoffDetailPage({ params }: { params: Promise<{ id: st
   function handleStatus(newStatus: string) {
     if (!handoff || acting) return;
     setActing(true);
-    patchHandoff(handoff.id, newStatus, {
+    patchHandoff(handoff, newStatus, {
       onSuccess: () => { setActing(false); refresh(); },
       onError: () => { setActing(false); },
     });
