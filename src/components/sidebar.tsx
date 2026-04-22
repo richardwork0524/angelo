@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { cachedFetch, invalidateCache } from '@/lib/cache';
+import { cachedFetch, invalidateCache, cacheSubscribe } from '@/lib/cache';
 import { useCommandPalette } from '@/hooks/use-command-palette';
 
 interface NavItem {
@@ -126,11 +126,13 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
     window.addEventListener('notes-changed', onChanged);
     window.addEventListener('handoffs-changed', onChanged);
     window.addEventListener('sessions-changed', onChanged);
+    const unsubscribe = cacheSubscribe('/api/home', refetch);
     return () => {
       window.removeEventListener('tasks-changed', onChanged);
       window.removeEventListener('notes-changed', onChanged);
       window.removeEventListener('handoffs-changed', onChanged);
       window.removeEventListener('sessions-changed', onChanged);
+      unsubscribe();
     };
   }, []);
 
