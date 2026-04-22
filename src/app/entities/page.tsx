@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback, Suspense } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { EntityCard, EtypeChip } from '@/components/entity-card';
 import { cachedFetch } from '@/lib/cache';
 import type { EntitySummary, EntityType } from '@/lib/types';
@@ -91,12 +92,31 @@ const DEV_SUBTABS: { key: DevSubCategory; label: string }[] = [
   { key: 'website', label: 'Website' },
 ];
 
-export default function EntitiesPage() {
+const VALID_PRIMARY: PrimaryCategory[] = ['companies', 'development', 'meta', 'group-strategy'];
+
+function parseCategoryParam(raw: string | null): { primary: PrimaryCategory; dev: DevSubCategory } {
+  if (raw === 'development') return { primary: 'development', dev: 'all' };
+  if (raw && VALID_PRIMARY.includes(raw as PrimaryCategory)) return { primary: raw as PrimaryCategory, dev: 'all' };
+  return { primary: 'companies', dev: 'all' };
+}
+
+function EntitiesPageInner() {
+  const searchParams = useSearchParams();
+  const categoryParam = searchParams.get('category');
+  const { primary: initPrimary, dev: initDev } = parseCategoryParam(categoryParam);
+
   const [entities, setEntities] = useState<EntitySummary[]>([]);
   const [loading, setLoading] = useState(true);
-  const [primaryCategory, setPrimaryCategory] = useState<PrimaryCategory>('companies');
-  const [devSub, setDevSub] = useState<DevSubCategory>('all');
+  const [primaryCategory, setPrimaryCategory] = useState<PrimaryCategory>(initPrimary);
+  const [devSub, setDevSub] = useState<DevSubCategory>(initDev);
   const [search, setSearch] = useState('');
+
+  // Sync if ?category= changes via navigation (e.g. sidebar link)
+  useEffect(() => {
+    const { primary, dev } = parseCategoryParam(searchParams.get('category'));
+    setPrimaryCategory(primary);
+    setDevSub(dev);
+  }, [searchParams]);
 
   const fetchEntities = useCallback(async () => {
     try {
@@ -459,6 +479,19 @@ function StatCell({
         {v}
       </div>
     </div>
+  );
+}
+
+// Wrap with Suspense so useSearchParams doesn't cause build-time static render issues
+export default function EntitiesPage() {
+  return (
+    <Suspense fallback={
+      <div className="h-full flex items-center justify-center">
+        <div className="w-6 h-6 rounded-full border-2 border-[var(--primary)] border-t-transparent animate-spin" />
+      </div>
+    }>
+      <EntitiesPageInner />
+    </Suspense>
   );
 }
 

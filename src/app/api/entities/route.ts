@@ -72,8 +72,33 @@ export async function GET() {
       tasksByKey.set(t.project_key, c);
     }
 
+    // Folder-root parent_key values: rows whose parent is a non-entity folder bucket
+    // (or null/root). These are the direct children we show on the list page.
+    const FOLDER_ROOTS = new Set([
+      'company',
+      'app-development',
+      'game-development',
+      'website-development',
+      'general',
+      'group-strategy',
+      'root',
+    ]);
+
+    // Build a set of entity child_keys (rows that have entity_type set)
+    const entityKeys = new Set(allProjects.filter((p) => p.entity_type !== null).map((p) => p.child_key));
+
+    // A project is "top-level" if its parent_key is null, a folder root, or not another entity
+    function isTopLevel(p: ProjectRow): boolean {
+      if (!p.parent_key) return true;
+      if (FOLDER_ROOTS.has(p.parent_key)) return true;
+      // If parent_key points to another entity row → it's a child entity, not top-level
+      if (entityKeys.has(p.parent_key)) return false;
+      // Parent is some unknown non-entity key (treat as folder root)
+      return true;
+    }
+
     const entities: EntitySummary[] = allProjects
-      .filter((p) => p.entity_type !== null && p.status !== 'RETIRED')
+      .filter((p) => p.entity_type !== null && p.status !== 'RETIRED' && isTopLevel(p))
       .map((p) => {
         const keys = descendantKeys(p.child_key);
         let tasksOpen = 0;

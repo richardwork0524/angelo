@@ -6,6 +6,7 @@ import type { Note, NoteType, Project } from '@/lib/types';
 
 export interface QuickNoteDetail {
   project_key?: string | null;
+  locked_project_key?: string | null;
   feature?: string | null;
   mission?: string | null;
   version?: string | null;
@@ -40,6 +41,7 @@ export function NoteModal() {
   const [noteType, setNoteType] = useState<NoteType>('GAP');
   const [text, setText] = useState('');
   const [projectKey, setProjectKey] = useState<string>('');
+  const [lockedProjectKey, setLockedProjectKey] = useState<string | null>(null);
   const [feature, setFeature] = useState('');
   const [version, setVersion] = useState('');
   const [sessionLogId, setSessionLogId] = useState<string | null>(null);
@@ -63,6 +65,7 @@ export function NoteModal() {
     setNoteType('GAP');
     setText('');
     setProjectKey('');
+    setLockedProjectKey(null);
     setFeature('');
     setMission('');
     setMissionInput('');
@@ -126,7 +129,10 @@ export function NoteModal() {
       const p = state.prefill;
       setNoteType(p.default_type || 'GAP');
       setText('');
-      setProjectKey(p.project_key || 'rinoa-os');
+      // locked_project_key takes precedence
+      const resolvedKey = p.locked_project_key || p.project_key || 'rinoa-os';
+      setLockedProjectKey(p.locked_project_key || null);
+      setProjectKey(resolvedKey);
       setFeature(p.feature || '');
       const m = p.mission || '';
       setMission(m);
@@ -432,34 +438,68 @@ export function NoteModal() {
             <div style={{ fontSize: 'var(--t-tiny)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>
               Project
             </div>
-            <select
-              value={projectKey}
-              onChange={(e) => {
-                setProjectKey(e.target.value);
-                setMission('');
-                setMissionInput('');
-              }}
-              disabled={isEdit}
-              style={{
-                width: '100%',
-                padding: '8px 10px',
-                background: 'var(--bg)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--r-sm)',
-                fontSize: 'var(--t-sm)',
-                color: 'var(--text)',
-                fontFamily: 'ui-monospace, monospace',
-                outline: 'none',
-                opacity: isEdit ? 0.6 : 1,
-              }}
-            >
-              {projects.length === 0 && <option value="">Loading…</option>}
-              {projects.map((p) => (
-                <option key={p.child_key} value={p.child_key}>
-                  {p.display_name} · {p.child_key}
-                </option>
-              ))}
-            </select>
+            {lockedProjectKey && !isEdit ? (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '8px 10px',
+                  background: 'var(--primary-dim)',
+                  border: '1px solid var(--primary-2)',
+                  borderRadius: 'var(--r-sm)',
+                  fontSize: 'var(--t-sm)',
+                  fontFamily: 'ui-monospace, monospace',
+                }}
+              >
+                <span style={{ flex: 1, color: 'var(--primary-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {projects.find((p) => p.child_key === lockedProjectKey)?.display_name
+                    ? `${projects.find((p) => p.child_key === lockedProjectKey)!.display_name} · ${lockedProjectKey}`
+                    : lockedProjectKey}
+                </span>
+                <span
+                  style={{
+                    fontSize: 9,
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: '.06em',
+                    color: 'var(--primary-2)',
+                    opacity: 0.7,
+                  }}
+                >
+                  locked
+                </span>
+              </div>
+            ) : (
+              <select
+                value={projectKey}
+                onChange={(e) => {
+                  setProjectKey(e.target.value);
+                  setMission('');
+                  setMissionInput('');
+                }}
+                disabled={isEdit}
+                style={{
+                  width: '100%',
+                  padding: '8px 10px',
+                  background: 'var(--bg)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--r-sm)',
+                  fontSize: 'var(--t-sm)',
+                  color: 'var(--text)',
+                  fontFamily: 'ui-monospace, monospace',
+                  outline: 'none',
+                  opacity: isEdit ? 0.6 : 1,
+                }}
+              >
+                {projects.length === 0 && <option value="">Loading…</option>}
+                {projects.map((p) => (
+                  <option key={p.child_key} value={p.child_key}>
+                    {p.display_name} · {p.child_key}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
           {/* Mission combobox — first-class field */}

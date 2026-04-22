@@ -211,6 +211,15 @@ export default function EntityDetailPage({ params }: { params: Promise<{ key: st
           <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
             <GhostButton
               onClick={() =>
+                window.dispatchEvent(new CustomEvent('quick-task', {
+                  detail: { locked_project_key: entity.child_key },
+                }))
+              }
+            >
+              ＋ Task
+            </GhostButton>
+            <GhostButton
+              onClick={() =>
                 window.dispatchEvent(new CustomEvent('quick-note', {
                   detail: { project_key: entity.child_key },
                 }))
@@ -679,14 +688,32 @@ function CreateChildModal({ entity, onClose, onCreated }: CreateChildModalProps)
   );
 }
 
+// Folder-root keys that should NOT be linked (they're not entity detail pages)
+const FOLDER_ROOTS = new Set([
+  'company', 'app-development', 'game-development', 'website-development',
+  'general', 'group-strategy', 'root',
+]);
+
 function Breadcrumb({ entity }: { entity: EntityDetail }) {
+  const parentIsEntity = entity.parent_key && !FOLDER_ROOTS.has(entity.parent_key);
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-tiny)', color: 'var(--text3)' }}>
       <Link href="/entities" style={{ color: 'var(--text3)', textDecoration: 'none' }}>Entities</Link>
       {entity.parent_key && (
         <>
           <span style={{ color: 'var(--text4)' }}>›</span>
-          <span style={{ fontFamily: 'ui-monospace' }}>{entity.parent_key}</span>
+          {parentIsEntity ? (
+            <Link
+              href={`/entity/${encodeURIComponent(entity.parent_key)}`}
+              style={{ fontFamily: 'ui-monospace', color: 'var(--text3)', textDecoration: 'none' }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--primary-2)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text3)'; }}
+            >
+              {entity.parent_key}
+            </Link>
+          ) : (
+            <span style={{ fontFamily: 'ui-monospace' }}>{entity.parent_key}</span>
+          )}
         </>
       )}
       <span style={{ color: 'var(--text4)' }}>›</span>
