@@ -245,6 +245,158 @@ export function cacheSet(url: string, data: unknown): void {
   idbSet(key, data, ts);
 }
 
+// --- Row-level cache primitives ---
+
+export type UpsertOpts = { listPath?: string; idKey?: string };
+
+/**
+ * Walk a dotted path on an object and return the nested value.
+ * Returns undefined if any segment is missing.
+ */
+function walkPath(obj: unknown, path: string): unknown {
+  if (!path) return obj;
+  return path.split('.').reduce<unknown>((cur, seg) => {
+    if (cur != null && typeof cur === 'object' && seg in (cur as Record<string, unknown>)) {
+      return (cur as Record<string, unknown>)[seg];
+    }
+    return undefined;
+  }, obj);
+}
+
+/**
+ * Write a mutated copy of a nested path back onto obj (shallow-clone each level).
+ * Returns the new root object.
+ */
+function setPath(obj: unknown, path: string, value: unknown): unknown {
+  if (!path) return value;
+  const segments = path.split('.');
+  function recurse(cur: unknown, segs: string[]): unknown {
+    const [head, ...tail] = segs;
+    const parent = (cur != null && typeof cur === 'object' ? cur : {}) as Record<string, unknown>;
+    return {
+      ...parent,
+      [head]: tail.length === 0 ? value : recurse(parent[head], tail),
+    };
+  }
+  return recurse(obj, segments);
+}
+
+/**
+ * Read current CacheEntry from the in-memory hot cache.
+ * Falls through to IDB if not present in memory.
+ * Returns null if nothing is cached for this key.
+ */
+async function readEntry(cacheKey: string): Promise<{ data: unknown; timestamp: number } | null> {
+  const memKey = `GET:${cacheKey}`;
+  const memEntry = cache.get(memKey);
+  if (memEntry && !memEntry.promise) {
+    return { data: memEntry.data, timestamp: memEntry.timestamp };
+  }
+  const idbEntry = await idbGet(memKey);
+  if (idbEntry) {
+    return { data: idbEntry.data, timestamp: idbEntry.timestamp };
+  }
+  return null;
+}
+
+/** Merge one row into a cached list response.
+ *
+ * @param cacheKey  URL like '/api/handoffs'
+ * @param row       Full row from realtime payload.new (must include idKey field)
+ * @param opts.listPath  Dotted path to the array inside the cached response.
+ *                       Undefined / empty string = top-level array (response IS the array).
+ *                       'handoffs' = response is { handoffs: [...] }.
+ * @param opts.idKey     Column used to identify the row (default 'id').
+ *
+ * If the path doesn't resolve: warns in dev, no-ops in prod.
+ * Replaces existing row (same idKey) at the same index; prepends if not found.
+ */
+export function upsertInCache(
+  cacheKey: string,
+  row: Record<string, unknown>,
+  opts: UpsertOpts = {}
+): void {
+  const { listPath = '', idKey = 'id' } = opts;
+
+  readEntry(cacheKey).then((entry) => {
+    if (!entry) return; // nothing cached yet — no-op
+
+    const list = walkPath(entry.data, listPath);
+
+    if (!Array.isArray(list)) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn(
+          `[cache] upsertInCache: "${listPath || '<root>'}" on "${cacheKey}" did not resolve to an array`,
+          entry.data
+        );
+      }
+      return;
+    }
+
+    const rowId = row[idKey];
+    const idx = list.findIndex((item) => {
+      return (item as Record<string, unknown>)[idKey] === rowId;
+    });
+
+    let newList: unknown[];
+    if (idx >= 0) {
+      // Replace at same index
+      newList = [...list];
+      newList[idx] = row;
+    } else {
+      // Prepend
+      newList = [row, ...list];
+    }
+
+    const newData = listPath ? setPath(entry.data, listPath, newList) : newList;
+    cacheSet(cacheKey, newData);
+    notifySubscribers(cacheKey);
+  }).catch(() => { /* best-effort */ });
+}
+
+/** Remove one row from a cached list response.
+ *
+ * @param cacheKey  URL like '/api/handoffs'
+ * @param rowId     Value of idKey to filter out
+ * @param opts.listPath  Same dotted-path semantics as upsertInCache.
+ * @param opts.idKey     Column to match against (default 'id').
+ *
+ * No-ops gracefully if nothing is cached or the path doesn't resolve.
+ */
+export function removeFromCache(
+  cacheKey: string,
+  rowId: string | number,
+  opts: UpsertOpts = {}
+): void {
+  const { listPath = '', idKey = 'id' } = opts;
+
+  readEntry(cacheKey).then((entry) => {
+    if (!entry) return;
+
+    const list = walkPath(entry.data, listPath);
+
+    if (!Array.isArray(list)) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn(
+          `[cache] removeFromCache: "${listPath || '<root>'}" on "${cacheKey}" did not resolve to an array`,
+          entry.data
+        );
+      }
+      return;
+    }
+
+    const newList = list.filter(
+      (item) => (item as Record<string, unknown>)[idKey] !== rowId
+    );
+
+    if (newList.length === list.length) return; // nothing removed — no-op, skip re-write + notify
+
+    const newData = listPath ? setPath(entry.data, listPath, newList) : newList;
+    cacheSet(cacheKey, newData);
+    notifySubscribers(cacheKey);
+  }).catch(() => { /* best-effort */ });
+}
+
 /** Invalidate a specific cache key or all keys matching a prefix */
 export function invalidateCache(urlPrefix?: string): void {
   if (!urlPrefix) {
