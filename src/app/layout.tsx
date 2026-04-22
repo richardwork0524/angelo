@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { AppShell } from "@/components/app-shell";
+import { DeviceGate } from "@/components/device-gate";
 
 export const metadata: Metadata = {
   title: "Angelo",
@@ -46,7 +47,9 @@ export default function RootLayout({
         `}} />
       </head>
       <body className="flex flex-col antialiased" style={{ fontFamily: "-apple-system, 'SF Pro Display', system-ui, sans-serif" }}>
-        <AppShell>{children}</AppShell>
+        <DeviceGate>
+          <AppShell>{children}</AppShell>
+        </DeviceGate>
       </body>
     </html>
   );
