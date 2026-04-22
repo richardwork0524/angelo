@@ -71,6 +71,28 @@ export default function NotesPage() {
     return () => window.removeEventListener('notes-changed', onChanged);
   }, [fetchNotes]);
 
+  // Per-entity note counts (N1) — computed client-side from all loaded notes
+  const entityCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const n of notes) {
+      if (!n.resolved || resolvedFilter !== 'unresolved') {
+        counts[n.project_key] = (counts[n.project_key] ?? 0) + 1;
+      }
+    }
+    return counts;
+  }, [notes, resolvedFilter]);
+
+  // Unresolved entity counts (always shown in sidebar)
+  const unresolvedEntityCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const n of notes) {
+      if (!n.resolved) {
+        counts[n.project_key] = (counts[n.project_key] ?? 0) + 1;
+      }
+    }
+    return counts;
+  }, [notes]);
+
   const entities = useMemo(() => {
     const keys = Array.from(new Set(notes.map((n) => n.project_key))).sort();
     return keys.map((key) => {
@@ -204,77 +226,198 @@ export default function NotesPage() {
         />
       </div>
 
-      {/* Hierarchy scope */}
-      <div
-        className="flex items-center gap-2 flex-wrap"
-        style={{
-          padding: '6px 12px',
-          background: 'var(--card)',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--r)',
-          fontSize: 'var(--t-sm)',
-        }}
-      >
-        <span style={{ fontSize: 'var(--t-tiny)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginRight: 4 }}>
-          Scope
-        </span>
-        <ScopeSelect value={entityFilter} onChange={setEntityFilter} placeholder="All entities">
-          {entities.map((e) => (
-            <option key={e.key} value={e.key}>{e.label}</option>
-          ))}
-        </ScopeSelect>
-        <span style={{ color: 'var(--text4)', fontFamily: 'ui-monospace, monospace' }}>›</span>
-        <ScopeSelect value={featureFilter} onChange={setFeatureFilter} disabled={entityFilter === 'all'} placeholder="All features">
-          {features.map((f) => (
-            <option key={f} value={f}>{f}</option>
-          ))}
-        </ScopeSelect>
-        <span style={{ color: 'var(--text4)', fontFamily: 'ui-monospace, monospace' }}>›</span>
-        <ScopeSelect value={missionFilter} onChange={setMissionFilter} disabled={featureFilter === 'all'} placeholder="All missions">
-          {missions.map((m) => (
-            <option key={m} value={m}>{m}</option>
-          ))}
-        </ScopeSelect>
-        <span style={{ marginLeft: 'auto', fontSize: 'var(--t-tiny)', color: 'var(--text4)' }}>
-          Drill down narrows results
-        </span>
-      </div>
+      {/* Main content: sidebar + grid */}
+      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
 
-      {/* Grid */}
-      {loading ? (
-        <div style={{ padding: 48, textAlign: 'center', color: 'var(--text3)', fontSize: 'var(--t-sm)' }}>
-          Loading notes…
-        </div>
-      ) : filtered.length === 0 ? (
+        {/* N1 — Per-entity sidebar */}
         <div
           style={{
-            padding: '48px 24px',
-            textAlign: 'center',
-            color: 'var(--text3)',
-            fontSize: 'var(--t-sm)',
+            width: 200,
+            flexShrink: 0,
             background: 'var(--card)',
             border: '1px solid var(--border)',
             borderRadius: 'var(--r)',
+            padding: '8px 0',
+            fontSize: 'var(--t-sm)',
           }}
         >
-          {notes.length === 0
-            ? 'No notes yet. Use the ＋ in the topbar or button above to capture one.'
-            : 'No notes match current filters.'}
+          <div
+            style={{
+              padding: '4px 12px 8px',
+              fontSize: 'var(--t-tiny)',
+              color: 'var(--text3)',
+              textTransform: 'uppercase',
+              letterSpacing: '.06em',
+              borderBottom: '1px solid var(--border)',
+              marginBottom: 4,
+            }}
+          >
+            By entity
+          </div>
+
+          {/* All */}
+          <button
+            onClick={() => setEntityFilter('all')}
+            style={{
+              display: 'flex',
+              width: '100%',
+              alignItems: 'center',
+              padding: '5px 12px',
+              background: entityFilter === 'all' ? 'var(--primary-dim)' : 'transparent',
+              border: 'none',
+              color: entityFilter === 'all' ? 'var(--primary-2)' : 'var(--text2)',
+              fontSize: 'var(--t-sm)',
+              cursor: 'pointer',
+              fontWeight: entityFilter === 'all' ? 600 : 400,
+              textAlign: 'left',
+              gap: 6,
+            }}
+          >
+            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              All entities
+            </span>
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 600,
+                color: entityFilter === 'all' ? 'var(--primary-2)' : 'var(--text4)',
+                fontVariantNumeric: 'tabular-nums',
+                background: entityFilter === 'all' ? 'var(--primary-dim)' : 'var(--bg)',
+                border: `1px solid ${entityFilter === 'all' ? 'var(--primary-2)' : 'var(--border)'}`,
+                borderRadius: 3,
+                padding: '1px 5px',
+                flexShrink: 0,
+              }}
+            >
+              {unresolvedCount}
+            </span>
+          </button>
+
+          {entities.map((e) => {
+            const active = entityFilter === e.key;
+            const count = unresolvedEntityCounts[e.key] ?? 0;
+            return (
+              <button
+                key={e.key}
+                onClick={() => setEntityFilter(e.key)}
+                style={{
+                  display: 'flex',
+                  width: '100%',
+                  alignItems: 'center',
+                  padding: '5px 12px',
+                  background: active ? 'var(--primary-dim)' : 'transparent',
+                  border: 'none',
+                  color: active ? 'var(--primary-2)' : 'var(--text2)',
+                  fontSize: 'var(--t-sm)',
+                  cursor: 'pointer',
+                  fontWeight: active ? 600 : 400,
+                  textAlign: 'left',
+                  gap: 6,
+                }}
+                onMouseEnter={(el) => { if (!active) el.currentTarget.style.background = 'var(--card-alt)'; }}
+                onMouseLeave={(el) => { if (!active) el.currentTarget.style.background = 'transparent'; }}
+              >
+                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {e.label}
+                </span>
+                <span
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 600,
+                    color: active ? 'var(--primary-2)' : (count > 0 ? 'var(--text3)' : 'var(--text4)'),
+                    background: active ? 'var(--primary-dim)' : 'var(--bg)',
+                    border: `1px solid ${active ? 'var(--primary-2)' : 'var(--border)'}`,
+                    borderRadius: 3,
+                    padding: '1px 5px',
+                    flexShrink: 0,
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+
+          {entities.length === 0 && !loading && (
+            <div style={{ padding: '8px 12px', color: 'var(--text4)', fontSize: 'var(--t-sm)' }}>
+              No entities
+            </div>
+          )}
         </div>
-      ) : (
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-            gap: 12,
-            alignContent: 'start',
-          }}
-        >
-          {filtered.map((n) => (
-            <NoteCard key={n.id} note={n} project={projects.find((p) => p.child_key === n.project_key)} onClick={() => openEdit(n)} />
-          ))}
+
+        {/* Right column: scope row + grid */}
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+          {/* Hierarchy scope (feature + mission drill-down) */}
+          {entityFilter !== 'all' && (
+            <div
+              className="flex items-center gap-2 flex-wrap"
+              style={{
+                padding: '6px 12px',
+                background: 'var(--card)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--r)',
+                fontSize: 'var(--t-sm)',
+              }}
+            >
+              <span style={{ fontSize: 'var(--t-tiny)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginRight: 4 }}>
+                Scope
+              </span>
+              <ScopeSelect value={featureFilter} onChange={setFeatureFilter} disabled={false} placeholder="All features">
+                {features.map((f) => (
+                  <option key={f} value={f}>{f}</option>
+                ))}
+              </ScopeSelect>
+              <span style={{ color: 'var(--text4)', fontFamily: 'ui-monospace, monospace' }}>›</span>
+              <ScopeSelect value={missionFilter} onChange={setMissionFilter} disabled={featureFilter === 'all'} placeholder="All missions">
+                {missions.map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </ScopeSelect>
+              <span style={{ marginLeft: 'auto', fontSize: 'var(--t-tiny)', color: 'var(--text4)' }}>
+                Drill down narrows results
+              </span>
+            </div>
+          )}
+
+          {/* Grid */}
+          {loading ? (
+            <div style={{ padding: 48, textAlign: 'center', color: 'var(--text3)', fontSize: 'var(--t-sm)' }}>
+              Loading notes…
+            </div>
+          ) : filtered.length === 0 ? (
+            <div
+              style={{
+                padding: '48px 24px',
+                textAlign: 'center',
+                color: 'var(--text3)',
+                fontSize: 'var(--t-sm)',
+                background: 'var(--card)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--r)',
+              }}
+            >
+              {notes.length === 0
+                ? 'No notes yet. Use the ＋ in the topbar or button above to capture one.'
+                : 'No notes match current filters.'}
+            </div>
+          ) : (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+                gap: 12,
+                alignContent: 'start',
+              }}
+            >
+              {filtered.map((n) => (
+                <NoteCard key={n.id} note={n} project={projects.find((p) => p.child_key === n.project_key)} onClick={() => openEdit(n)} />
+              ))}
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* Stats strip */}
       <div

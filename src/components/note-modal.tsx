@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { invalidateCache } from '@/lib/cache';
+import { HierarchyPicker } from '@/components/hierarchy-picker';
 import type { Note, NoteType, Project } from '@/lib/types';
 
 export interface QuickNoteDetail {
@@ -51,13 +52,8 @@ export function NoteModal() {
   const [error, setError] = useState<string | null>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
 
-  // Mission combobox
+  // Mission (managed by HierarchyPicker)
   const [mission, setMission] = useState('');
-  const [missionInput, setMissionInput] = useState('');
-  const [missionOptions, setMissionOptions] = useState<string[]>([]);
-  const [missionOpen, setMissionOpen] = useState(false);
-  const missionRef = useRef<HTMLInputElement>(null);
-  const missionDropRef = useRef<HTMLDivElement>(null);
 
   const isOpen = state.mode !== 'closed';
 
@@ -68,12 +64,9 @@ export function NoteModal() {
     setLockedProjectKey(null);
     setFeature('');
     setMission('');
-    setMissionInput('');
-    setMissionOptions([]);
     setVersion('');
     setSessionLogId(null);
     setShowAdvanced(false);
-    setMissionOpen(false);
     setError(null);
   }, []);
 
@@ -81,18 +74,6 @@ export function NoteModal() {
     setState({ mode: 'closed' });
     resetForm();
   }, [resetForm]);
-
-  // Fetch missions for project
-  const fetchMissions = useCallback(async (pk: string) => {
-    if (!pk) { setMissionOptions([]); return; }
-    try {
-      const res = await fetch(`/api/tasks?project=${encodeURIComponent(pk)}&completed=false`);
-      if (!res.ok) return;
-      const json = await res.json();
-      const byProject = json.missions?.by_project as Record<string, string[]> | undefined;
-      setMissionOptions(byProject?.[pk] ?? []);
-    } catch { /* silent */ }
-  }, []);
 
   useEffect(() => {
     function onQuickNote(evt: Event) {
@@ -130,90 +111,46 @@ export function NoteModal() {
       setNoteType(p.default_type || 'GAP');
       setText('');
       // locked_project_key takes precedence
-      const resolvedKey = p.locked_project_key || p.project_key || 'rinoa-os';
+      const resolvedKey = p.locked_project_key || p.project_key || '';
       setLockedProjectKey(p.locked_project_key || null);
       setProjectKey(resolvedKey);
       setFeature(p.feature || '');
-      const m = p.mission || '';
-      setMission(m);
-      setMissionInput(m);
+      setMission(p.mission || '');
       setVersion(p.version || '');
       setSessionLogId(p.session_log_id ?? null);
       setShowAdvanced(!!(p.feature || p.version));
-      setMissionOpen(false);
       setError(null);
     } else if (state.mode === 'edit') {
       const n = state.note;
       setNoteType(n.note_type);
       setText(n.text);
       setProjectKey(n.project_key);
+      setLockedProjectKey(null);
       setFeature(n.feature || '');
-      const m = n.mission || '';
-      setMission(m);
-      setMissionInput(m);
+      setMission(n.mission || '');
       setVersion(n.version || '');
       setSessionLogId(n.session_log_id);
       setShowAdvanced(!!(n.feature || n.version));
-      setMissionOpen(false);
       setError(null);
     }
     const t = setTimeout(() => textRef.current?.focus(), 80);
     return () => clearTimeout(t);
   }, [state]);
 
-  // Load missions when projectKey changes
-  useEffect(() => {
-    if (!isOpen || !projectKey) return;
-    fetchMissions(projectKey);
-  }, [isOpen, projectKey, fetchMissions]);
-
   useEffect(() => {
     if (!isOpen) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
-        if (missionOpen) { setMissionOpen(false); return; }
-        close();
-      }
+      if (e.key === 'Escape') close();
     }
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [isOpen, close, missionOpen]);
-
-  // Close mission dropdown on outside click
-  useEffect(() => {
-    if (!missionOpen) return;
-    function onClick(e: MouseEvent) {
-      if (
-        missionRef.current && !missionRef.current.contains(e.target as Node) &&
-        missionDropRef.current && !missionDropRef.current.contains(e.target as Node)
-      ) {
-        setMissionOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', onClick);
-    return () => document.removeEventListener('mousedown', onClick);
-  }, [missionOpen]);
-
-  function selectMission(m: string) {
-    setMission(m);
-    setMissionInput(m);
-    setMissionOpen(false);
-    missionRef.current?.blur();
-  }
-
-  const filteredMissions = missionOptions.filter((m) =>
-    m.toLowerCase().includes(missionInput.toLowerCase())
-  );
-
-  const showNewMissionOption =
-    missionInput.trim() !== '' &&
-    !missionOptions.some((m) => m.toLowerCase() === missionInput.toLowerCase().trim());
+  }, [isOpen, close]);
 
   async function onSave() {
     setError(null);
     const trimmed = text.trim();
     if (!trimmed) { setError('Text required.'); textRef.current?.focus(); return; }
-    if (!projectKey) { setError('Pick a project.'); return; }
+    if (!projectKey) { setError('Pick a project via the hierarchy.'); return; }
     setSubmitting(true);
     try {
       if (state.mode === 'edit') {
@@ -324,7 +261,7 @@ export function NoteModal() {
         onClick={(e) => e.stopPropagation()}
         style={{
           width: '100%',
-          maxWidth: 520,
+          maxWidth: 540,
           background: 'var(--card)',
           border: '1px solid var(--border)',
           borderRadius: 'var(--r-lg)',
@@ -433,183 +370,64 @@ export function NoteModal() {
             />
           </div>
 
-          {/* Project selector */}
+          {/* Hierarchy picker — Project + Mission cascade (or edit mode: project is fixed) */}
           <div>
             <div style={{ fontSize: 'var(--t-tiny)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>
-              Project
+              Project / Mission
             </div>
-            {lockedProjectKey && !isEdit ? (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '8px 10px',
-                  background: 'var(--primary-dim)',
-                  border: '1px solid var(--primary-2)',
-                  borderRadius: 'var(--r-sm)',
-                  fontSize: 'var(--t-sm)',
-                  fontFamily: 'ui-monospace, monospace',
-                }}
-              >
-                <span style={{ flex: 1, color: 'var(--primary-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {projects.find((p) => p.child_key === lockedProjectKey)?.display_name
-                    ? `${projects.find((p) => p.child_key === lockedProjectKey)!.display_name} · ${lockedProjectKey}`
-                    : lockedProjectKey}
-                </span>
-                <span
+            {isEdit ? (
+              /* Edit mode: project locked, show simple display */
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div
                   style={{
-                    fontSize: 9,
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    letterSpacing: '.06em',
-                    color: 'var(--primary-2)',
+                    padding: '8px 10px',
+                    background: 'var(--bg)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--r-sm)',
+                    fontSize: 'var(--t-sm)',
+                    fontFamily: 'ui-monospace, monospace',
+                    color: 'var(--text2)',
                     opacity: 0.7,
                   }}
                 >
-                  locked
-                </span>
+                  {projects.find((p) => p.child_key === projectKey)?.display_name || projectKey}
+                </div>
+                {/* Mission field for edit */}
+                <div>
+                  <div style={{ fontSize: 'var(--t-tiny)', color: 'var(--text3)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '.06em' }}>
+                    Mission (optional)
+                  </div>
+                  <input
+                    value={mission}
+                    onChange={(e) => setMission(e.target.value)}
+                    placeholder="e.g. ANG-UI-M019"
+                    style={{
+                      width: '100%',
+                      padding: '7px 10px',
+                      background: 'var(--bg)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 'var(--r-sm)',
+                      fontSize: 'var(--t-sm)',
+                      color: 'var(--text)',
+                      fontFamily: 'ui-monospace, monospace',
+                      outline: 'none',
+                    }}
+                  />
+                </div>
               </div>
             ) : (
-              <select
-                value={projectKey}
-                onChange={(e) => {
-                  setProjectKey(e.target.value);
-                  setMission('');
-                  setMissionInput('');
-                }}
-                disabled={isEdit}
-                style={{
-                  width: '100%',
-                  padding: '8px 10px',
-                  background: 'var(--bg)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 'var(--r-sm)',
-                  fontSize: 'var(--t-sm)',
-                  color: 'var(--text)',
-                  fontFamily: 'ui-monospace, monospace',
-                  outline: 'none',
-                  opacity: isEdit ? 0.6 : 1,
-                }}
-              >
-                {projects.length === 0 && <option value="">Loading…</option>}
-                {projects.map((p) => (
-                  <option key={p.child_key} value={p.child_key}>
-                    {p.display_name} · {p.child_key}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
-
-          {/* Mission combobox — first-class field */}
-          <div style={{ position: 'relative' }}>
-            <div style={{ fontSize: 'var(--t-tiny)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>
-              Mission (optional)
-            </div>
-            <div style={{ position: 'relative' }}>
-              <input
-                ref={missionRef}
-                value={missionInput}
-                onChange={(e) => {
-                  setMissionInput(e.target.value);
-                  setMission(e.target.value);
-                  setMissionOpen(true);
-                }}
-                onFocus={() => setMissionOpen(true)}
-                placeholder="e.g. ANG-UI-M019"
-                style={{
-                  width: '100%',
-                  padding: '8px 32px 8px 10px',
-                  background: 'var(--bg)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 'var(--r-sm)',
-                  fontSize: 'var(--t-sm)',
-                  color: 'var(--text)',
-                  fontFamily: 'ui-monospace, monospace',
-                  outline: 'none',
-                }}
+              <HierarchyPicker
+                projectKey={projectKey}
+                onProjectKeyChange={setProjectKey}
+                value={mission}
+                onChange={setMission}
+                lockedProjectKey={lockedProjectKey}
+                projects={projects}
               />
-              {missionInput && (
-                <button
-                  onClick={() => { setMission(''); setMissionInput(''); setMissionOpen(false); }}
-                  style={{
-                    position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
-                    background: 'transparent', border: 'none', color: 'var(--text3)',
-                    cursor: 'pointer', fontSize: 12, lineHeight: 1, padding: 2,
-                  }}
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-            {missionOpen && (filteredMissions.length > 0 || showNewMissionOption) && (
-              <div
-                ref={missionDropRef}
-                style={{
-                  position: 'absolute',
-                  top: '100%',
-                  left: 0,
-                  right: 0,
-                  zIndex: 50,
-                  background: 'var(--card)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 'var(--r-sm)',
-                  boxShadow: 'var(--sh-lg)',
-                  marginTop: 2,
-                  maxHeight: 200,
-                  overflowY: 'auto',
-                }}
-              >
-                {filteredMissions.map((m) => (
-                  <button
-                    key={m}
-                    onMouseDown={(e) => { e.preventDefault(); selectMission(m); }}
-                    style={{
-                      display: 'block',
-                      width: '100%',
-                      textAlign: 'left',
-                      padding: '8px 12px',
-                      background: 'transparent',
-                      border: 'none',
-                      color: 'var(--text)',
-                      fontSize: 'var(--t-sm)',
-                      fontFamily: 'ui-monospace, monospace',
-                      cursor: 'pointer',
-                      borderBottom: '1px solid var(--border)',
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--card-alt)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                  >
-                    {m}
-                  </button>
-                ))}
-                {showNewMissionOption && (
-                  <button
-                    onMouseDown={(e) => { e.preventDefault(); selectMission(missionInput.trim()); }}
-                    style={{
-                      display: 'block',
-                      width: '100%',
-                      textAlign: 'left',
-                      padding: '8px 12px',
-                      background: 'transparent',
-                      border: 'none',
-                      color: 'var(--primary-2)',
-                      fontSize: 'var(--t-sm)',
-                      fontFamily: 'ui-monospace, monospace',
-                      cursor: 'pointer',
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--card-alt)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                  >
-                    ＋ New mission: &ldquo;{missionInput.trim()}&rdquo;
-                  </button>
-                )}
-              </div>
             )}
           </div>
 
-          {/* Advanced toggle — feature + version only now */}
+          {/* Advanced toggle — feature + version only */}
           <button
             type="button"
             onClick={() => setShowAdvanced((v) => !v)}

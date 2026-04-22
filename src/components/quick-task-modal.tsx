@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { invalidateCache } from '@/lib/cache';
+import { HierarchyPicker } from '@/components/hierarchy-picker';
 import type { Project } from '@/lib/types';
 
 interface QuickTaskDetail {
@@ -46,13 +47,8 @@ export function QuickTaskModal() {
   const [error, setError] = useState<string | null>(null);
   const textRef = useRef<HTMLInputElement>(null);
 
-  // Mission combobox
+  // Mission (managed by HierarchyPicker)
   const [mission, setMission] = useState('');
-  const [missionInput, setMissionInput] = useState('');
-  const [missionOptions, setMissionOptions] = useState<string[]>([]);
-  const [missionOpen, setMissionOpen] = useState(false);
-  const missionRef = useRef<HTMLInputElement>(null);
-  const missionDropRef = useRef<HTMLDivElement>(null);
 
   // Parent task combobox
   const [parentTaskId, setParentTaskId] = useState<string | null>(null);
@@ -62,16 +58,13 @@ export function QuickTaskModal() {
   const parentRef = useRef<HTMLInputElement>(null);
   const parentDropRef = useRef<HTMLDivElement>(null);
 
-  // Fetch missions + open tasks for selected project (single request)
-  const fetchProjectData = useCallback(async (pk: string) => {
-    if (!pk) { setMissionOptions([]); setParentOptions([]); return; }
+  // Fetch open tasks for selected project (for parent task combobox)
+  const fetchProjectTasks = useCallback(async (pk: string) => {
+    if (!pk) { setParentOptions([]); return; }
     try {
       const res = await fetch(`/api/tasks?project=${encodeURIComponent(pk)}&completed=false`);
       if (!res.ok) return;
       const json = await res.json();
-      // missions.by_project is Record<string, string[]>
-      const byProject = json.missions?.by_project as Record<string, string[]> | undefined;
-      setMissionOptions(byProject?.[pk] ?? []);
       if (Array.isArray(json.tasks)) setParentOptions(json.tasks);
     } catch { /* silent */ }
   }, []);
@@ -85,14 +78,12 @@ export function QuickTaskModal() {
       setPriority(detail.priority || null);
       const m = detail.mission || '';
       setMission(m);
-      setMissionInput(m);
       // locked_project_key takes precedence over project_key
-      const resolvedKey = detail.locked_project_key || detail.project_key || 'rinoa-os';
+      const resolvedKey = detail.locked_project_key || detail.project_key || '';
       setLockedProjectKey(detail.locked_project_key || null);
       setProjectKey(resolvedKey);
       setParentTaskId(detail.parent_task_id || null);
       setParentTaskInput('');
-      setMissionOpen(false);
       setParentOpen(false);
       setError(null);
       setOpen(true);
@@ -102,12 +93,13 @@ export function QuickTaskModal() {
     return () => window.removeEventListener('quick-task', onOpen);
   }, []);
 
-  // Load missions + parent options when projectKey changes (and modal is open)
+  // Load parent task options when projectKey changes (and modal is open)
   useEffect(() => {
     if (!open || !projectKey) return;
-    fetchProjectData(projectKey);
-  }, [open, projectKey, fetchProjectData]);
+    fetchProjectTasks(projectKey);
+  }, [open, projectKey, fetchProjectTasks]);
 
+  // Load projects list (for locked chip display_name)
   useEffect(() => {
     if (projects.length > 0) return;
     let cancelled = false;
@@ -128,30 +120,15 @@ export function QuickTaskModal() {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') {
-        if (missionOpen) { setMissionOpen(false); return; }
         if (parentOpen) { setParentOpen(false); return; }
         setOpen(false);
       }
     }
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [open, missionOpen, parentOpen]);
+  }, [open, parentOpen]);
 
-  // Close dropdowns on outside click
-  useEffect(() => {
-    if (!missionOpen) return;
-    function onClick(e: MouseEvent) {
-      if (
-        missionRef.current && !missionRef.current.contains(e.target as Node) &&
-        missionDropRef.current && !missionDropRef.current.contains(e.target as Node)
-      ) {
-        setMissionOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', onClick);
-    return () => document.removeEventListener('mousedown', onClick);
-  }, [missionOpen]);
-
+  // Close parent dropdown on outside click
   useEffect(() => {
     if (!parentOpen) return;
     function onClick(e: MouseEvent) {
@@ -166,13 +143,6 @@ export function QuickTaskModal() {
     return () => document.removeEventListener('mousedown', onClick);
   }, [parentOpen]);
 
-  function selectMission(m: string) {
-    setMission(m);
-    setMissionInput(m);
-    setMissionOpen(false);
-    missionRef.current?.blur();
-  }
-
   function clearParent() {
     setParentTaskId(null);
     setParentTaskInput('');
@@ -183,10 +153,6 @@ export function QuickTaskModal() {
     setParentTaskInput(t.task_code ? `${t.task_code} — ${t.text}` : t.text);
     setParentOpen(false);
   }
-
-  const filteredMissions = missionOptions.filter((m) =>
-    m.toLowerCase().includes(missionInput.toLowerCase())
-  );
 
   const filteredParents = parentOptions.filter((t) => {
     const q = parentTaskInput.toLowerCase();
@@ -201,7 +167,7 @@ export function QuickTaskModal() {
     setError(null);
     const trimmed = text.trim();
     if (!trimmed) { setError('Task text required.'); textRef.current?.focus(); return; }
-    if (!projectKey) { setError('Pick a project.'); return; }
+    if (!projectKey) { setError('Pick a project via the hierarchy.'); return; }
     setSubmitting(true);
     try {
       const body: Record<string, unknown> = { text: trimmed, bucket };
@@ -225,9 +191,6 @@ export function QuickTaskModal() {
       invalidateCache('/api/home');
       invalidateCache(`/api/projects/${projectKey}`);
       if (mTrimmed) invalidateCache(`/api/missions/${encodeURIComponent(mTrimmed)}`);
-      // Pass the fresh task on the event so listeners can insert it immediately
-      // without racing the next GET /api/tasks (which can return stale empty results
-      // due to read-after-write timing on Supabase's pooled connections).
       window.dispatchEvent(new CustomEvent('tasks-changed', { detail: { action: 'added', task: createdTask } }));
       setOpen(false);
     } catch (e) {
@@ -238,10 +201,6 @@ export function QuickTaskModal() {
   }
 
   if (!open) return null;
-
-  const showNewMissionOption =
-    missionInput.trim() !== '' &&
-    !missionOptions.some((m) => m.toLowerCase() === missionInput.toLowerCase().trim());
 
   const selectedParentLabel = parentTaskId
     ? (parentOptions.find((t) => t.id === parentTaskId)?.text ?? parentTaskInput)
@@ -269,7 +228,7 @@ export function QuickTaskModal() {
         onClick={(e) => e.stopPropagation()}
         style={{
           width: '100%',
-          maxWidth: 520,
+          maxWidth: 540,
           background: 'var(--card)',
           border: '1px solid var(--border)',
           borderRadius: 'var(--r-lg)',
@@ -343,73 +302,23 @@ export function QuickTaskModal() {
             />
           </div>
 
-          {/* Project */}
+          {/* Hierarchy picker — Project + Mission cascade (or locked chip) */}
           <div>
             <div style={{ fontSize: 'var(--t-tiny)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>
-              Project
+              Project / Mission
             </div>
-            {lockedProjectKey ? (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '8px 10px',
-                  background: 'var(--primary-dim)',
-                  border: '1px solid var(--primary-2)',
-                  borderRadius: 'var(--r-sm)',
-                  fontSize: 'var(--t-sm)',
-                  fontFamily: 'ui-monospace, monospace',
-                }}
-              >
-                <span style={{ flex: 1, color: 'var(--primary-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {projects.find((p) => p.child_key === lockedProjectKey)?.display_name
-                    ? `${projects.find((p) => p.child_key === lockedProjectKey)!.display_name} · ${lockedProjectKey}`
-                    : lockedProjectKey}
-                </span>
-                <span
-                  style={{
-                    fontSize: 9,
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    letterSpacing: '.06em',
-                    color: 'var(--primary-2)',
-                    opacity: 0.7,
-                  }}
-                >
-                  locked
-                </span>
-              </div>
-            ) : (
-              <select
-                value={projectKey}
-                onChange={(e) => {
-                  setProjectKey(e.target.value);
-                  setMission('');
-                  setMissionInput('');
-                  setParentTaskId(null);
-                  setParentTaskInput('');
-                }}
-                style={{
-                  width: '100%',
-                  padding: '8px 10px',
-                  background: 'var(--bg)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 'var(--r-sm)',
-                  fontSize: 'var(--t-sm)',
-                  color: 'var(--text)',
-                  fontFamily: 'ui-monospace, monospace',
-                  outline: 'none',
-                }}
-              >
-                {projects.length === 0 && <option value="">Loading…</option>}
-                {projects.map((p) => (
-                  <option key={p.child_key} value={p.child_key}>
-                    {p.display_name} · {p.child_key}
-                  </option>
-                ))}
-              </select>
-            )}
+            <HierarchyPicker
+              projectKey={projectKey}
+              onProjectKeyChange={(key) => {
+                setProjectKey(key);
+                setParentTaskId(null);
+                setParentTaskInput('');
+              }}
+              value={mission}
+              onChange={setMission}
+              lockedProjectKey={lockedProjectKey}
+              projects={projects}
+            />
           </div>
 
           {/* Bucket */}
@@ -475,113 +384,6 @@ export function QuickTaskModal() {
                 );
               })}
             </div>
-          </div>
-
-          {/* Mission combobox */}
-          <div style={{ position: 'relative' }}>
-            <div style={{ fontSize: 'var(--t-tiny)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>
-              Mission (optional)
-            </div>
-            <div style={{ position: 'relative' }}>
-              <input
-                ref={missionRef}
-                value={missionInput}
-                onChange={(e) => {
-                  setMissionInput(e.target.value);
-                  setMission(e.target.value);
-                  setMissionOpen(true);
-                }}
-                onFocus={() => setMissionOpen(true)}
-                placeholder="e.g. memory-hygiene"
-                style={{
-                  width: '100%',
-                  padding: '8px 32px 8px 10px',
-                  background: 'var(--bg)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 'var(--r-sm)',
-                  fontSize: 'var(--t-sm)',
-                  color: 'var(--text)',
-                  fontFamily: 'ui-monospace, monospace',
-                  outline: 'none',
-                }}
-              />
-              {missionInput && (
-                <button
-                  onClick={() => { setMission(''); setMissionInput(''); setMissionOpen(false); }}
-                  style={{
-                    position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
-                    background: 'transparent', border: 'none', color: 'var(--text3)',
-                    cursor: 'pointer', fontSize: 12, lineHeight: 1, padding: 2,
-                  }}
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-            {missionOpen && (filteredMissions.length > 0 || showNewMissionOption) && (
-              <div
-                ref={missionDropRef}
-                style={{
-                  position: 'absolute',
-                  top: '100%',
-                  left: 0,
-                  right: 0,
-                  zIndex: 50,
-                  background: 'var(--card)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 'var(--r-sm)',
-                  boxShadow: 'var(--sh-lg)',
-                  marginTop: 2,
-                  maxHeight: 200,
-                  overflowY: 'auto',
-                }}
-              >
-                {filteredMissions.map((m) => (
-                  <button
-                    key={m}
-                    onMouseDown={(e) => { e.preventDefault(); selectMission(m); }}
-                    style={{
-                      display: 'block',
-                      width: '100%',
-                      textAlign: 'left',
-                      padding: '8px 12px',
-                      background: 'transparent',
-                      border: 'none',
-                      color: 'var(--text)',
-                      fontSize: 'var(--t-sm)',
-                      fontFamily: 'ui-monospace, monospace',
-                      cursor: 'pointer',
-                      borderBottom: '1px solid var(--border)',
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--card-alt)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                  >
-                    {m}
-                  </button>
-                ))}
-                {showNewMissionOption && (
-                  <button
-                    onMouseDown={(e) => { e.preventDefault(); selectMission(missionInput.trim()); }}
-                    style={{
-                      display: 'block',
-                      width: '100%',
-                      textAlign: 'left',
-                      padding: '8px 12px',
-                      background: 'transparent',
-                      border: 'none',
-                      color: 'var(--primary-2)',
-                      fontSize: 'var(--t-sm)',
-                      fontFamily: 'ui-monospace, monospace',
-                      cursor: 'pointer',
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--card-alt)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                  >
-                    ＋ New mission: &ldquo;{missionInput.trim()}&rdquo;
-                  </button>
-                )}
-              </div>
-            )}
           </div>
 
           {/* Parent task combobox */}
