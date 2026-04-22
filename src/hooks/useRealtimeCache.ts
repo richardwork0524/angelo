@@ -22,6 +22,9 @@ function getCacheKeys(table: string, payload: Record<string, unknown>): string[]
   } else if (table === 'angelo_projects') {
     keys.push('/api/projects');
     keys.push('/api/dashboard');
+  } else if (table === 'angelo_handoffs') {
+    keys.push('/api/handoffs');
+    keys.push('/api/home');
   }
 
   return keys;

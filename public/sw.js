@@ -1,9 +1,12 @@
-// Angelo Service Worker — 3-cache strategy
-const CACHE_VERSION = 'v1';
+// Angelo Service Worker — 2-cache strategy
+// v2 (2026-04-22): /api/* bypasses SW entirely. Client-side cache
+// (src/lib/cache.ts IDB+memory) handles freshness, realtime WebSocket
+// pushes fresh rows into it. SW cache was a redundant 3rd tier that
+// WS events couldn't invalidate.
+const CACHE_VERSION = 'v2';
 const STATIC_CACHE = `angelo-static-${CACHE_VERSION}`;
-const API_CACHE = `angelo-api-${CACHE_VERSION}`;
 const SHELL_CACHE = `angelo-shell-${CACHE_VERSION}`;
-const ALL_CACHES = [STATIC_CACHE, API_CACHE, SHELL_CACHE];
+const ALL_CACHES = [STATIC_CACHE, SHELL_CACHE];
 
 // --- Install: precache offline fallback ---
 self.addEventListener('install', (e) => {
@@ -43,11 +46,9 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // Strategy: API data — StaleWhileRevalidate
-  if (url.pathname.startsWith('/api/')) {
-    e.respondWith(staleWhileRevalidate(request, API_CACHE));
-    return;
-  }
+  // Strategy: API data — bypass SW entirely. Client cache (src/lib/cache.ts)
+  // + Supabase Realtime handle freshness; SW cache can't be WS-invalidated.
+  if (url.pathname.startsWith('/api/')) return;
 
   // Strategy: App pages — NetworkFirst
   if (isAppPage(url)) {
@@ -91,29 +92,6 @@ async function cacheFirst(request, cacheName) {
   } catch {
     return new Response('Offline', { status: 503 });
   }
-}
-
-// StaleWhileRevalidate: serve cache immediately, update in background
-async function staleWhileRevalidate(request, cacheName) {
-  const cache = await caches.open(cacheName);
-  const cached = await cache.match(request);
-
-  const fetchPromise = fetch(request).then((response) => {
-    if (response.ok) cache.put(request, response.clone());
-    return response;
-  }).catch(() => null);
-
-  // Return cached immediately if available, otherwise wait for network
-  if (cached) {
-    // Fire-and-forget background revalidation
-    fetchPromise;
-    return cached;
-  }
-  const response = await fetchPromise;
-  return response || new Response(JSON.stringify({ error: 'offline' }), {
-    status: 503,
-    headers: { 'Content-Type': 'application/json' },
-  });
 }
 
 // NetworkFirst: try network, fallback to cache, then offline page

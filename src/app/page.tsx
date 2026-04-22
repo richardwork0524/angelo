@@ -9,6 +9,7 @@ import { StatusBadge } from '@/components/status-badge';
 import { HeroCard, TierLabel } from '@/components/hero-card';
 import { ShortcutPill } from '@/components/shortcut-pill';
 import { useHotkeys } from '@/hooks/use-hotkeys';
+import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import type { Handoff } from '@/lib/types';
 
 const DAILY_COST_CAP = 6;
@@ -157,6 +158,12 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => { fetchHome(); fetchTopTask(); }, [fetchHome, fetchTopTask]);
+
+  useRealtimeRefresh({
+    table: 'angelo_handoffs',
+    cachePrefix: '/api/home',
+    onRefresh: fetchHome,
+  });
 
   const mounted = data?.mounted_handoffs?.[0] || null;
   const recent = (data?.recent_handoffs || []).filter((h) => h.id !== mounted?.id).slice(0, 4);
