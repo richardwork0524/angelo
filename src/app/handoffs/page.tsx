@@ -3,8 +3,7 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { HandoffCard, purposeFromEntry, PurposeChip } from '@/components/handoff-card';
 import type { HandoffPurpose } from '@/lib/types';
-import { cachedFetch } from '@/lib/cache';
-import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
+import { cachedFetch, cacheSubscribe } from '@/lib/cache';
 import { useToast } from '@/components/toast';
 import type { Handoff } from '@/lib/types';
 
@@ -68,11 +67,14 @@ export default function HandoffsPage() {
     fetchHandoffs();
   }, [fetchHandoffs]);
 
-  useRealtimeRefresh({
-    table: 'angelo_handoffs',
-    cachePrefix: '/api/handoffs',
-    onRefresh: () => fetchHandoffs(true),
-  });
+  // Global RealtimeProvider handles Supabase subscriptions.
+  // React to /api/handoffs cache invalidations (realtime upsert/remove + local mutations).
+  useEffect(() => {
+    return cacheSubscribe('/api/handoffs', () => {
+      // Small delay to let cache settle before refetching
+      setTimeout(() => fetchHandoffs(true), 50);
+    });
+  }, [fetchHandoffs]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();

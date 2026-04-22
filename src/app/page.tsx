@@ -3,13 +3,12 @@
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { cachedFetch, invalidateCache } from '@/lib/cache';
+import { cachedFetch, invalidateCache, cacheSubscribe } from '@/lib/cache';
 import { patchHandoff } from '@/lib/mutate';
 import { StatusBadge } from '@/components/status-badge';
 import { HeroCard, TierLabel } from '@/components/hero-card';
 import { ShortcutPill } from '@/components/shortcut-pill';
 import { useHotkeys } from '@/hooks/use-hotkeys';
-import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { HandoffPopup } from '@/components/popups/handoff-popup';
 import type { Handoff } from '@/lib/types';
 
@@ -161,11 +160,13 @@ export default function HomePage() {
 
   useEffect(() => { fetchHome(); fetchTopTask(); }, [fetchHome, fetchTopTask]);
 
-  useRealtimeRefresh({
-    table: 'angelo_handoffs',
-    cachePrefix: '/api/home',
-    onRefresh: fetchHome,
-  });
+  // Global RealtimeProvider handles Supabase subscriptions.
+  // React to /api/home cache invalidations (from realtime or local mutations).
+  useEffect(() => {
+    return cacheSubscribe('/api/home', () => {
+      setTimeout(() => fetchHome(), 50);
+    });
+  }, [fetchHome]);
 
   const mounted = data?.mounted_handoffs?.[0] || null;
   const recent = (data?.recent_handoffs || []).filter((h) => h.id !== mounted?.id).slice(0, 4);

@@ -2,7 +2,9 @@
 
 import { useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
-import { invalidateCache } from '@/lib/cache';
+import { invalidateCache, upsertInCache, removeFromCache } from '@/lib/cache';
+import { DESCRIPTORS } from '@/lib/realtime-descriptor';
+import type { CacheAction } from '@/lib/realtime-descriptor';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
 /**
@@ -11,23 +13,32 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
  */
 const channels = new Map<string, { channel: RealtimeChannel; refCount: number }>();
 
-/** Map table changes to cache keys that need invalidation */
-function getCacheKeys(table: string, payload: Record<string, unknown>): string[] {
-  const row = (payload.new || payload.old || {}) as Record<string, unknown>;
-  const keys: string[] = [];
+/**
+ * Per-key debounce timers for onInvalidate callbacks.
+ * Keyed by channelKey so a burst on angelo_handoffs doesn't delay
+ * a concurrent angelo_session_events notification.
+ */
+const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-  if (table === 'angelo_tasks') {
-    keys.push('/api/dashboard');
-    if (row.project_key) keys.push(`/api/projects/${row.project_key}`);
-  } else if (table === 'angelo_projects') {
-    keys.push('/api/projects');
-    keys.push('/api/dashboard');
-  } else if (table === 'angelo_handoffs') {
-    keys.push('/api/handoffs');
-    keys.push('/api/home');
+function dispatchAction(action: CacheAction, row: Record<string, unknown>): void {
+  if (action.kind === 'upsert') {
+    upsertInCache(action.key, row, {
+      listPath: action.listPath,
+      idKey: action.idKey,
+    });
+  } else if (action.kind === 'remove') {
+    const idKey = action.idKey ?? 'id';
+    const rowId = (row[idKey] ?? row.id) as string | number;
+    if (rowId != null) {
+      removeFromCache(action.key, rowId, {
+        listPath: action.listPath,
+        idKey: action.idKey,
+      });
+    }
+  } else {
+    // kind === 'invalidate'
+    invalidateCache(action.key);
   }
-
-  return keys;
 }
 
 interface UseRealtimeCacheOpts {
@@ -42,7 +53,8 @@ interface UseRealtimeCacheOpts {
 
 /**
  * Subscribe to Supabase postgres_changes on a table.
- * Invalidates relevant cache keys on change, debounced at 500ms.
+ * Uses DESCRIPTORS to determine which cache keys to update on change.
+ * Debounce is per-key so concurrent table bursts don't interfere.
  */
 export function useRealtimeCache({
   table,
@@ -59,24 +71,34 @@ export function useRealtimeCache({
     const filterSuffix = filterColumn && filterValue ? `:${filterColumn}=${filterValue}` : '';
     const channelKey = `${schema}:${table}${filterSuffix}`;
 
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-
     function handleChange(payload: Record<string, unknown>) {
-      const keys = getCacheKeys(table, payload);
-
       // If we have a filter, check that the change matches
       if (filterColumn && filterValue) {
         const row = (payload.new || payload.old || {}) as Record<string, unknown>;
         if (row[filterColumn] !== filterValue) return;
       }
 
-      keys.forEach((k) => invalidateCache(k));
+      const eventType = payload.eventType as 'INSERT' | 'UPDATE' | 'DELETE';
+      const row = (payload.new ?? payload.old ?? {}) as Record<string, unknown>;
 
-      // Debounce the onInvalidate callback (batch rapid changes)
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
+      // Look up descriptor for this table
+      const descriptor = DESCRIPTORS.find((d) => d.table === table);
+      if (descriptor) {
+        const actions = descriptor.actions(eventType, row);
+        actions.forEach((action) => dispatchAction(action, row));
+      } else {
+        // No descriptor — fall back to full cache invalidation (safe default)
+        invalidateCache();
+      }
+
+      // Per-key debounce for the onInvalidate callback
+      const existing = debounceTimers.get(channelKey);
+      if (existing) clearTimeout(existing);
+      const timer = setTimeout(() => {
+        debounceTimers.delete(channelKey);
         onInvalidateRef.current?.();
       }, 500);
+      debounceTimers.set(channelKey, timer);
     }
 
     // Reuse existing channel or create new one
@@ -103,7 +125,11 @@ export function useRealtimeCache({
     }
 
     return () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
+      const timer = debounceTimers.get(channelKey);
+      if (timer) {
+        clearTimeout(timer);
+        debounceTimers.delete(channelKey);
+      }
       const entry = channels.get(channelKey);
       if (entry) {
         entry.refCount--;
@@ -114,4 +140,12 @@ export function useRealtimeCache({
       }
     };
   }, [table, schema, filterColumn, filterValue]);
+}
+
+/**
+ * Alias used by RealtimeProvider — minimal opts form.
+ * Identical to useRealtimeCache but named for clarity at the call site.
+ */
+export function useRealtimeSync({ table }: { table: string }) {
+  return useRealtimeCache({ table });
 }

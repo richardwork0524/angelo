@@ -12,6 +12,7 @@ import { useLiveSession } from '@/hooks/use-live-session';
 import { useCommandPalette } from '@/hooks/use-command-palette';
 import { LiveRibbon } from './live-ribbon';
 import { BottomNav } from './bottom-nav';
+import { RealtimeProvider } from './realtime-provider';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [navOpen, setNavOpen] = useState(false);
@@ -95,6 +96,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </div>
       <NoteModal />
+      <RealtimeProvider />
       <QuickTaskModal />
       <CreateChooser />
       <CommandPalette open={paletteOpen} onClose={closePalette} />
