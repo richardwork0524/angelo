@@ -9,6 +9,8 @@ import { patchHandoff, patchTask, deleteTask, addSubtask } from '@/lib/mutate';
 import { StatusBadge } from '@/components/status-badge';
 import { TierLabel } from '@/components/hero-card';
 import { HandoffPopup } from '@/components/popups/handoff-popup';
+import { SectionPager, type Section } from '@/components/section-pager';
+import { useBreakpoint } from '@/hooks/useBreakpoint';
 import type { Handoff } from '@/lib/types';
 import type { DetailTask } from '@/components/task/task-detail';
 
@@ -130,6 +132,7 @@ function splitScopeName(name: string): { main: string; sub: string | null } {
 
 export default function HomePage() {
   const router = useRouter();
+  const isDesktop = useBreakpoint(768);
   const [data, setData] = useState<HomeData | null>(null);
   const [loading, setLoading] = useState(true);
   const [topTasks, setTopTasks] = useState<TopTask[]>([]);
@@ -239,6 +242,11 @@ export default function HomePage() {
     window.dispatchEvent(new CustomEvent('quick-note', { detail }));
   }
 
+  function handleNewTask() {
+    const detail = mounted ? { project_key: mounted.project_key } : {};
+    window.dispatchEvent(new CustomEvent('quick-task', { detail }));
+  }
+
   if (loading) {
     return (
       <div className="h-full flex items-center justify-center">
@@ -266,7 +274,10 @@ export default function HomePage() {
 
   return (
     <div className="h-full overflow-y-auto" style={{ overscrollBehaviorY: 'contain', overflowX: 'hidden' }}>
-      <div className="max-w-[1280px] mx-auto px-4 md:px-8 py-5 md:py-7 pb-8">
+      <div
+        className="max-w-[1280px] mx-auto px-4 md:px-8 py-5 md:py-7"
+        style={{ paddingBottom: isDesktop ? 32 : 'calc(36px + var(--safe-b))' }}
+      >
         {/* Page head */}
         <div className="flex items-end justify-between mb-6 gap-4 flex-wrap">
           <div>
@@ -277,7 +288,7 @@ export default function HomePage() {
               </span>
             </h1>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={handleNewNote}
               className="transition-colors"
@@ -292,6 +303,21 @@ export default function HomePage() {
               }}
             >
               ＋ Note
+            </button>
+            <button
+              onClick={handleNewTask}
+              className="transition-colors"
+              style={{
+                padding: '8px 14px',
+                background: 'var(--card)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--r-sm)',
+                fontSize: 'var(--t-sm)',
+                color: 'var(--text2)',
+                fontWeight: 500,
+              }}
+            >
+              ＋ Task
             </button>
             <button
               onClick={() => router.push('/handoffs')}

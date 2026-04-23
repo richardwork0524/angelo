@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { EntityCard, EtypeChip } from '@/components/entity-card';
 import { cachedFetch } from '@/lib/cache';
+import { useBreakpoint } from '@/hooks/useBreakpoint';
+import { SectionPager, type Section } from '@/components/section-pager';
 import type { EntitySummary, EntityType } from '@/lib/types';
 
 /** Primary category tabs */
@@ -102,6 +104,7 @@ function parseCategoryParam(raw: string | null): { primary: PrimaryCategory; dev
 
 function EntitiesPageInner() {
   const searchParams = useSearchParams();
+  const isDesktop = useBreakpoint(768);
   const categoryParam = searchParams.get('category');
   const { primary: initPrimary, dev: initDev } = parseCategoryParam(categoryParam);
 
@@ -148,25 +151,39 @@ function EntitiesPageInner() {
     }));
   }, [entities, allByKey]);
 
-  // Filtered by primary category + dev sub + search
-  const filtered = useMemo(() => {
+  // Filter by search query (used for both desktop and mobile)
+  const searchFilter = useCallback((e: EntitySummary) => {
     const q = search.trim().toLowerCase();
+    if (!q) return true;
+    const hay = [e.child_key, e.display_name, e.brief, e.entity_type]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    return hay.includes(q);
+  }, [search]);
+
+  // Filtered by primary category + dev sub + search (desktop)
+  const filtered = useMemo(() => {
     return categorised
       .filter(({ primary, dev }) => {
         if (primary !== primaryCategory) return false;
         if (primaryCategory === 'development' && devSub !== 'all' && dev !== devSub) return false;
         return true;
       })
-      .filter(({ entity: e }) => {
-        if (!q) return true;
-        const hay = [e.child_key, e.display_name, e.brief, e.entity_type]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase();
-        return hay.includes(q);
-      })
-      .map(({ entity }) => entity);
-  }, [categorised, primaryCategory, devSub, search]);
+      .map(({ entity }) => entity)
+      .filter(searchFilter);
+  }, [categorised, primaryCategory, devSub, searchFilter]);
+
+  // Group categorised entities by primary category (mobile pager)
+  const byCategory = useMemo(() => {
+    const groups: Record<PrimaryCategory, { entity: EntitySummary; dev?: DevSubCategory }[]> = {
+      companies: [], development: [], meta: [], 'group-strategy': [],
+    };
+    for (const c of categorised) {
+      groups[c.primary].push({ entity: c.entity, dev: c.dev });
+    }
+    return groups;
+  }, [categorised]);
 
   // Category counts for tab hints
   const counts = useMemo(() => {
@@ -190,6 +207,123 @@ function EntitiesPageInner() {
     }
     return out;
   }, [categorised]);
+
+  // Mobile layout — swipe between primary categories, each with its grid
+  if (!isDesktop) {
+    const sections: Section[] = PRIMARY_TABS.map((t) => {
+      const all = byCategory[t.key].map(({ entity }) => entity).filter(searchFilter);
+      const devFilteredAll = byCategory[t.key];
+      return {
+        key: t.key,
+        label: t.label,
+        badge: counts[t.key] || null,
+        content: (
+          <div className="px-4 pt-3" style={{ paddingBottom: 'calc(36px + var(--safe-b))' }}>
+            {t.key === 'development' && (
+              <div className="flex gap-1 mb-3 flex-wrap">
+                {DEV_SUBTABS.map((sub) => {
+                  const active = devSub === sub.key;
+                  return (
+                    <button
+                      key={sub.key}
+                      onClick={() => setDevSub(sub.key)}
+                      style={{
+                        padding: '4px 10px',
+                        fontSize: 12,
+                        fontWeight: active ? 600 : 500,
+                        color: active ? '#fff' : 'var(--text3)',
+                        background: active ? 'var(--primary)' : 'var(--card)',
+                        border: `1px solid ${active ? 'var(--primary)' : 'var(--border)'}`,
+                        borderRadius: 6,
+                      }}
+                    >
+                      {sub.label}
+                      {devCounts[sub.key] > 0 && (
+                        <span style={{ marginLeft: 4, opacity: .8 }}>{devCounts[sub.key]}</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {(() => {
+              const filteredCat = t.key === 'development'
+                ? devFilteredAll
+                    .filter(({ dev }) => devSub === 'all' || dev === devSub)
+                    .map(({ entity }) => entity)
+                    .filter(searchFilter)
+                : all;
+              if (filteredCat.length === 0) {
+                return (
+                  <div
+                    style={{
+                      textAlign: 'center',
+                      padding: '36px 24px',
+                      background: 'var(--card)',
+                      border: '1px dashed var(--border)',
+                      borderRadius: 'var(--r)',
+                      color: 'var(--text3)',
+                      fontSize: 'var(--t-sm)',
+                    }}
+                  >
+                    {search ? 'No matches' : `No ${t.label.toLowerCase()} yet`}
+                  </div>
+                );
+              }
+              return (
+                <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
+                  {filteredCat.map((e) => (
+                    <EntityCard key={e.child_key} entity={e} />
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+        ),
+      };
+    });
+
+    return (
+      <div className="h-full flex flex-col" data-testid="entities-page">
+        <div className="shrink-0 px-4 pt-4 pb-2">
+          <div className="flex items-baseline justify-between mb-2">
+            <h1 className="font-semibold tracking-tight" style={{ fontSize: 'var(--t-h2)' }}>
+              Entities
+              <span className="ml-2 font-normal" style={{ color: 'var(--text3)', fontSize: 'var(--t-body)' }}>
+                {entities.length}
+              </span>
+            </h1>
+          </div>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search…"
+            className="w-full"
+            style={{
+              background: 'var(--card)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--r-sm)',
+              padding: '7px 10px',
+              color: 'var(--text)',
+              fontSize: 'var(--t-sm)',
+              outline: 'none',
+            }}
+          />
+        </div>
+        {loading ? (
+          <div className="flex items-center justify-center" style={{ height: 180 }}>
+            <div className="w-6 h-6 rounded-full border-2 border-[var(--primary)] border-t-transparent animate-spin" />
+          </div>
+        ) : (
+          <SectionPager
+            sections={sections}
+            initialIndex={PRIMARY_TABS.findIndex((t) => t.key === primaryCategory)}
+            onIndexChange={(i) => setPrimaryCategory(PRIMARY_TABS[i].key)}
+          />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="h-full overflow-y-auto" data-testid="entities-page">

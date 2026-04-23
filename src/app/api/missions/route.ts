@@ -2,6 +2,37 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 
 /**
+ * GET /api/missions?parent=<key>&q=<search>
+ * List missions (rows where entity_type='mission').
+ * Optional parent filter narrows to one entity's missions.
+ */
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const parent = searchParams.get("parent");
+    const q = searchParams.get("q");
+    const limit = Math.min(parseInt(searchParams.get("limit") || "200", 10) || 200, 500);
+
+    let query = supabase
+      .from("angelo_projects")
+      .select("child_key, display_name, parent_key, status")
+      .eq("entity_type", "mission")
+      .order("updated_at", { ascending: false })
+      .limit(limit);
+
+    if (parent) query = query.eq("parent_key", parent);
+    if (q && q.trim()) query = query.ilike("display_name", `%${q.trim()}%`);
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return NextResponse.json({ missions: data || [] });
+  } catch (err) {
+    console.error("Mission GET error:", err);
+    return NextResponse.json({ error: "Failed to list missions" }, { status: 500 });
+  }
+}
+
+/**
  * POST /api/missions
  * Create a mission row in angelo_projects.
  * Body: { name: string, parent_key: string }

@@ -13,6 +13,7 @@ import type { TaskItem } from '@/components/task/task-row';
 import type { DetailTask } from '@/components/task/task-detail';
 import { ShortcutPill } from '@/components/shortcut-pill';
 import { useCommandPalette } from '@/hooks/use-command-palette';
+import { SectionPager, type Section } from '@/components/section-pager';
 
 const TaskDetail = dynamic(
   () => import('@/components/task/task-detail').then((m) => ({ default: m.TaskDetail })),
@@ -867,8 +868,8 @@ function TasksPageInner() {
               onReorder={handleReorder}
             />
           </div>
-        ) : (
-          /* Mobile: list */
+        ) : bucket ? (
+          /* Mobile: explicit bucket filter selected → flat list */
           <div>
             <TaskList
               tasks={tasksAsItems}
@@ -877,6 +878,14 @@ function TasksPageInner() {
               onToggleComplete={(id) => handleToggle(id)}
             />
           </div>
+        ) : (
+          /* Mobile: swipe between Week / Month / Parked */
+          <MobileBucketPager
+            tasks={tasksAsItems}
+            showProject={!project}
+            onTaskTap={(t) => setSelectedTaskId(t.id)}
+            onToggleComplete={(id) => handleToggle(id)}
+          />
         )}
       </div>
 
@@ -927,3 +936,63 @@ const selectStyle: React.CSSProperties = {
   outline: 'none',
   height: 32,
 };
+
+/* ── Mobile: swipe between Week / Month / Parked ── */
+
+const MOBILE_BUCKETS = [
+  { key: 'THIS_WEEK', label: 'Week' },
+  { key: 'THIS_MONTH', label: 'Month' },
+  { key: 'PARKED', label: 'Parked' },
+];
+
+function MobileBucketPager({
+  tasks,
+  showProject,
+  onTaskTap,
+  onToggleComplete,
+}: {
+  tasks: TaskItem[];
+  showProject: boolean;
+  onTaskTap: (t: TaskItem) => void;
+  onToggleComplete: (id: string) => void;
+}) {
+  const sections: Section[] = MOBILE_BUCKETS.map((b) => {
+    const bucketTasks = tasks.filter((t) => t.bucket === b.key);
+    const openCount = bucketTasks.filter((t) => !t.completed && !t.parent_task_id).length;
+    return {
+      key: b.key,
+      label: b.label,
+      badge: openCount > 0 ? openCount : null,
+      content: (
+        <div className="px-2 py-3" style={{ paddingBottom: 'calc(24px + var(--safe-b))' }}>
+          {bucketTasks.filter((t) => !t.parent_task_id).length === 0 ? (
+            <div
+              className="text-center"
+              style={{
+                padding: '36px 24px',
+                color: 'var(--text3)',
+                fontSize: 'var(--t-sm)',
+                fontStyle: 'italic',
+              }}
+            >
+              No {b.label.toLowerCase()} tasks.
+            </div>
+          ) : (
+            <TaskList
+              tasks={bucketTasks}
+              showProject={showProject}
+              onTaskTap={onTaskTap}
+              onToggleComplete={onToggleComplete}
+            />
+          )}
+        </div>
+      ),
+    };
+  });
+
+  return (
+    <div style={{ height: 'calc(100dvh - 220px)', minHeight: 320, display: 'flex', flexDirection: 'column' }}>
+      <SectionPager sections={sections} sticky />
+    </div>
+  );
+}
