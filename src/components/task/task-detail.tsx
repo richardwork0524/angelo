@@ -36,7 +36,7 @@ interface Props {
 /* ── Component ── */
 
 export function TaskDetail({ task, subtasks = [], onClose, onUpdate, onDelete, onAddSubtask }: Props) {
-  const isDesktop = useBreakpoint(768);
+  const isDesktop = useBreakpoint(640);
   const [visible, setVisible] = useState(true);
   const [localTask, setLocalTask] = useState(task);
   const [saving, setSaving] = useState(false);
@@ -563,19 +563,25 @@ export function TaskDetail({ task, subtasks = [], onClose, onUpdate, onDelete, o
 
   if (isDesktop) {
     return (
-      <div
-        className={`fixed top-0 right-0 bottom-0 w-[420px] z-50 shadow-2xl transition-transform duration-200 ${
-          visible ? 'translate-x-0' : 'translate-x-full'
-        }`}
-      >
-        {panelContent}
-      </div>
+      <>
+        <div
+          className={`fixed inset-0 bg-black/40 z-40 transition-opacity duration-200 ${visible ? 'opacity-100' : 'opacity-0'}`}
+          onClick={handleClose}
+        />
+        <div
+          className={`fixed top-0 right-0 bottom-0 z-50 shadow-2xl transition-transform duration-200 w-[clamp(380px,38vw,480px)] lg:w-[clamp(420px,34vw,520px)] xl:w-[min(560px,32vw)] ${
+            visible ? 'translate-x-0' : 'translate-x-full'
+          }`}
+        >
+          {panelContent}
+        </div>
+      </>
     );
   }
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/50 z-40" onClick={handleClose} />
+      <div className={`fixed inset-0 bg-black/50 z-40 transition-opacity duration-200 ${visible ? 'opacity-100' : 'opacity-0'}`} onClick={handleClose} />
       <div
         className={`fixed inset-0 z-50 transition-transform duration-200 ${
           visible ? 'translate-y-0' : 'translate-y-full'
