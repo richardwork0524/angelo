@@ -9,6 +9,8 @@ import { EntityDropTarget } from '@/components/entity-drop-target';
 import { ReattributionToast } from '@/components/reattribution-toast';
 import { ShortcutPill } from '@/components/shortcut-pill';
 import { useCommandPalette } from '@/hooks/use-command-palette';
+import { SectionPager, type Section } from '@/components/section-pager';
+import { useBreakpoint } from '@/hooks/useBreakpoint';
 
 type Range = 'today' | '7d' | '30d' | 'all';
 
@@ -104,6 +106,7 @@ interface UndoState {
 }
 
 export default function SessionsPage() {
+  const isDesktop = useBreakpoint(768);
   const [range, setRange] = useState<Range>('7d');
   const [data, setData] = useState<SessionsResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -256,38 +259,187 @@ export default function SessionsPage() {
     [filtered]
   );
 
+  const pageHead = (
+    <div className="flex items-center justify-between gap-4 flex-wrap">
+      <h1 className="flex items-center gap-3 font-semibold tracking-tight" style={{ fontSize: isDesktop ? 'var(--t-h2)' : 'var(--t-h3)' }}>
+        Sessions
+        <span className="font-normal" style={{ color: 'var(--text3)', fontSize: 'var(--t-body)' }}>
+          {data ? `${data.total} total` : '—'}
+          {week ? ` · ${week.total_sessions} in last 7d` : ''}
+        </span>
+        {isDesktop && <ShortcutPill label="⌘K Search" onClick={openPalette} />}
+      </h1>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 3, padding: 3, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r)' }}>
+        {RANGE_TABS.map((t) => (
+          <RangeTab key={t.key} active={range === t.key} onClick={() => setRange(t.key)}>
+            {t.label}
+          </RangeTab>
+        ))}
+      </div>
+    </div>
+  );
+
+  const searchBar = (
+    <div style={{ padding: '10px 12px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r)' }}>
+      <input
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Search by title, project, mission, or summary…"
+        style={{ width: '100%', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: '6px 12px', color: 'var(--text)', fontSize: 'var(--t-sm)', outline: 'none' }}
+      />
+    </div>
+  );
+
+  // ─── Mobile: swipe pager ────────────────────────────────────────────────
+  if (!isDesktop) {
+    const liveSection = (
+      <div className="flex flex-col gap-3 px-4 py-3" style={{ paddingBottom: 'calc(36px + var(--safe-b))' }}>
+        {searchBar}
+        {loading ? (
+          <div className="flex items-center justify-center" style={{ height: 80 }}>
+            <div className="w-5 h-5 rounded-full border-2 border-[var(--primary)] border-t-transparent animate-spin" />
+          </div>
+        ) : todaySessions.length === 0 ? (
+          <div style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--text3)', fontSize: 'var(--t-sm)', background: 'var(--card)', border: '1px dashed var(--border)', borderRadius: 'var(--r)' }}>
+            No sessions today yet
+          </div>
+        ) : (
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r)', overflow: 'hidden' }}>
+            {todaySessions.map((s) => (
+              <SessionRowItem
+                key={s.id}
+                s={s}
+                expanded={expanded === s.id}
+                onToggle={() => setExpanded(expanded === s.id ? null : s.id)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+
+    const recentSection = (
+      <div className="flex flex-col gap-3 px-4 py-3" style={{ paddingBottom: 'calc(36px + var(--safe-b))' }}>
+        {searchBar}
+        {loading ? (
+          <div className="flex items-center justify-center" style={{ height: 80 }}>
+            <div className="w-5 h-5 rounded-full border-2 border-[var(--primary)] border-t-transparent animate-spin" />
+          </div>
+        ) : (weekSessions.length === 0 && olderSessions.length === 0) ? (
+          <div style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--text3)', fontSize: 'var(--t-sm)', background: 'var(--card)', border: '1px dashed var(--border)', borderRadius: 'var(--r)' }}>
+            No sessions in the selected range
+          </div>
+        ) : (
+          <>
+            {weekSessions.length > 0 && (
+              <div>
+                <div style={{ fontSize: 'var(--t-tiny)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', fontWeight: 600, marginBottom: 6 }}>
+                  This week
+                </div>
+                <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r)', overflow: 'hidden' }}>
+                  {weekSessions.map((s) => (
+                    <SessionRowItem key={s.id} s={s} expanded={expanded === s.id} onToggle={() => setExpanded(expanded === s.id ? null : s.id)} />
+                  ))}
+                </div>
+              </div>
+            )}
+            {olderSessions.length > 0 && (
+              <div>
+                <div style={{ fontSize: 'var(--t-tiny)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', fontWeight: 600, marginBottom: 6 }}>
+                  Older
+                </div>
+                <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r)', overflow: 'hidden' }}>
+                  {olderSessions.slice(0, 20).map((s) => (
+                    <SessionRowItem key={s.id} s={s} expanded={expanded === s.id} onToggle={() => setExpanded(expanded === s.id ? null : s.id)} compact />
+                  ))}
+                  {olderSessions.length > 20 && (
+                    <div style={{ padding: '10px 16px', textAlign: 'center' }}>
+                      <button onClick={() => setRange('all')} style={{ fontSize: 'var(--t-sm)', color: 'var(--primary-2)', background: 'none', border: 'none', cursor: 'pointer' }}>
+                        Load {olderSessions.length - 20} more →
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    );
+
+    const chartsSection = (
+      <div className="flex flex-col gap-3 px-4 py-3" style={{ paddingBottom: 'calc(36px + var(--safe-b))' }}>
+        {week && (
+          <>
+            <ChartCard
+              label="Tokens / day (7d)"
+              daily={week.daily}
+              value={(d) => d.tokens}
+              max={maxDailyTokens}
+              color="var(--primary)"
+              subtitle={<><span style={{ fontWeight: 600 }}>{fmtTokens(week.total_tokens)}</span><span style={{ color: 'var(--text3)' }}> / week · avg {fmtTokens(week.avg_tokens)}/session</span></>}
+              todayIso={todayIso}
+            />
+            <ChartCard
+              label="Cost / day (7d)"
+              daily={week.daily}
+              value={(d) => d.cost}
+              max={maxDailyCost}
+              color="var(--success)"
+              subtitle={<><span style={{ fontWeight: 600 }}>{fmtCost(week.total_cost)}</span><span style={{ color: 'var(--text3)' }}> / week · {fmtCost(week.avg_cost)}/session</span></>}
+              todayIso={todayIso}
+            />
+            <ChartCard
+              label="Efficiency (tok/$)"
+              daily={week.daily}
+              value={(d) => (d.cost > 0 ? d.tokens / d.cost : 0)}
+              max={maxDailyEff}
+              color="var(--info)"
+              subtitle={<><span style={{ fontWeight: 600 }}>{week.efficiency_tokens_per_dollar.toLocaleString()}</span><span style={{ color: 'var(--text3)' }}> tok/$ weekly</span></>}
+              todayIso={todayIso}
+            />
+          </>
+        )}
+        {sessions.length > 0 && <SurfaceMixBar surfaceMix={surfaceMix} />}
+        {data && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+            <StatCell k={`Sessions (${range})`} v={String(data.stats.range_total)} />
+            <StatCell k="7d sessions" v={String(week?.total_sessions ?? 0)} tone="primary" />
+            <StatCell k="7d tokens" v={fmtTokens(week?.total_tokens ?? 0)} tone="primary" />
+            <StatCell k="7d cost" v={fmtCost(week?.total_cost ?? 0)} tone="success" />
+          </div>
+        )}
+      </div>
+    );
+
+    const sections: Section[] = [
+      { key: 'live', label: 'Live', badge: todaySessions.length > 0 ? todaySessions.length : null, content: liveSection },
+      { key: 'recent', label: 'Recent', badge: weekSessions.length + olderSessions.length > 0 ? weekSessions.length + olderSessions.length : null, content: recentSection },
+      { key: 'charts', label: 'Charts', content: chartsSection },
+    ];
+
+    return (
+      <div className="h-full flex flex-col" data-testid="sessions-page">
+        <div className="shrink-0 px-4 pt-4 pb-2">{pageHead}</div>
+        <SectionPager sections={sections} initialIndex={0} />
+        {undoState && (
+          <ReattributionToast
+            sessionId={undoState.sessionId}
+            newProjectKey={undoState.newProjectKey}
+            previousProjectKey={undoState.previousProjectKey}
+            onUndo={handleUndo}
+            onDismiss={() => setUndoState(null)}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // ─── Desktop layout ────────────────────────────────────────────────────
   return (
     <div className="h-full overflow-y-auto" data-testid="sessions-page">
       <div className="max-w-[1280px] mx-auto px-4 md:px-8 py-5 md:py-7" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {/* Page head */}
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <h1 className="flex items-center gap-3 font-semibold tracking-tight" style={{ fontSize: 'var(--t-h2)' }}>
-            Sessions
-            <span className="font-normal" style={{ color: 'var(--text3)', fontSize: 'var(--t-body)' }}>
-              {data ? `${data.total} total` : '—'}
-              {week ? ` · ${week.total_sessions} in last 7d` : ''}
-            </span>
-            {/* Desktop shortcut pills */}
-            <ShortcutPill label="⌘K Search" onClick={openPalette} />
-          </h1>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 3,
-              padding: 3,
-              background: 'var(--card)',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--r)',
-            }}
-          >
-            {RANGE_TABS.map((t) => (
-              <RangeTab key={t.key} active={range === t.key} onClick={() => setRange(t.key)}>
-                {t.label}
-              </RangeTab>
-            ))}
-          </div>
-        </div>
+        {pageHead}
 
         {/* 7-day bar charts */}
         {week && (
@@ -342,31 +494,7 @@ export default function SessionsPage() {
           <SurfaceMixBar surfaceMix={surfaceMix} />
         )}
 
-        {/* Search */}
-        <div
-          style={{
-            padding: '10px 12px',
-            background: 'var(--card)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--r)',
-          }}
-        >
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by title, project, mission, or summary…"
-            style={{
-              width: '100%',
-              background: 'var(--bg)',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--r-sm)',
-              padding: '6px 12px',
-              color: 'var(--text)',
-              fontSize: 'var(--t-sm)',
-              outline: 'none',
-            }}
-          />
-        </div>
+        {searchBar}
 
         {/* HERO — Today's sessions */}
         <div>

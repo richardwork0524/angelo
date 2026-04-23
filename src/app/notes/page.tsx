@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import type { Note, NoteType, Project } from '@/lib/types';
 import type { QuickNoteDetail } from '@/components/note-modal';
+import { SectionPager, type Section } from '@/components/section-pager';
+import { useBreakpoint } from '@/hooks/useBreakpoint';
 
 type TypeFilter = 'all' | NoteType;
 type ResolvedFilter = 'unresolved' | 'resolved' | 'all';
@@ -32,7 +34,9 @@ interface NotesApiResponse {
 }
 
 export default function NotesPage() {
+  const isDesktop = useBreakpoint(768);
   const [notes, setNotes] = useState<Note[]>([]);
+  const [showEntitySheet, setShowEntitySheet] = useState(false);
   const [stats, setStats] = useState<NotesApiResponse['stats'] | null>(null);
   const [loading, setLoading] = useState(true);
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
@@ -150,6 +154,182 @@ export default function NotesPage() {
     window.dispatchEvent(new CustomEvent('quick-note', { detail }));
   }
 
+  function cycleResolved() {
+    setResolvedFilter((prev) => prev === 'unresolved' ? 'all' : prev === 'all' ? 'resolved' : 'unresolved');
+  }
+
+  // ─── Mobile: swipe pager by note type ───────────────────────────────────
+  if (!isDesktop) {
+    const MOBILE_TYPE_SECTIONS: { key: TypeFilter; label: string }[] = [
+      { key: 'all', label: 'All' },
+      { key: 'GAP', label: 'GAP' },
+      { key: 'IDEA', label: 'IDEA' },
+      { key: 'OBSERVATION', label: 'OBS' },
+      { key: 'REVISIT', label: 'REVISIT' },
+    ];
+
+    // Base-filtered notes (respect resolved + entity + feature + mission + search, but not type)
+    const baseFiltered = notes.filter((n) => {
+      if (resolvedFilter === 'unresolved' && n.resolved) return false;
+      if (resolvedFilter === 'resolved' && !n.resolved) return false;
+      if (entityFilter !== 'all' && n.project_key !== entityFilter) return false;
+      if (featureFilter !== 'all' && n.feature !== featureFilter) return false;
+      if (missionFilter !== 'all' && n.mission !== missionFilter) return false;
+      const q = search.trim().toLowerCase();
+      if (q && !n.text.toLowerCase().includes(q)) return false;
+      return true;
+    });
+
+    const resolvedLabel = resolvedFilter === 'unresolved' ? `Unresolved · ${baseFiltered.length}` : resolvedFilter === 'resolved' ? `Resolved · ${baseFiltered.length}` : `All · ${baseFiltered.length}`;
+
+    const entityDisplayName = entityFilter === 'all'
+      ? 'All entities'
+      : (projects.find((p) => p.child_key === entityFilter)?.display_name || entityFilter);
+
+    const initialIndex = Math.max(0, MOBILE_TYPE_SECTIONS.findIndex((s) => s.key === typeFilter));
+
+    const sections: Section[] = MOBILE_TYPE_SECTIONS.map(({ key, label }) => {
+      const list = key === 'all' ? baseFiltered : baseFiltered.filter((n) => n.note_type === key);
+      return {
+        key,
+        label,
+        badge: list.length > 0 ? list.length : null,
+        content: (
+          <div className="flex flex-col gap-2 px-4 py-3" style={{ paddingBottom: 'calc(36px + var(--safe-b))' }}>
+            {loading ? (
+              <div style={{ padding: 48, textAlign: 'center', color: 'var(--text3)', fontSize: 'var(--t-sm)' }}>
+                Loading notes…
+              </div>
+            ) : list.length === 0 ? (
+              <div style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--text3)', fontSize: 'var(--t-sm)', background: 'var(--card)', border: '1px dashed var(--border)', borderRadius: 'var(--r)' }}>
+                {notes.length === 0 ? 'No notes yet. Tap ＋ Note to capture one.' : key === 'all' ? 'No notes match current filters.' : `No ${label} notes in scope.`}
+              </div>
+            ) : (
+              list.map((n) => (
+                <NoteCard key={n.id} note={n} project={projects.find((p) => p.child_key === n.project_key)} onClick={() => openEdit(n)} />
+              ))
+            )}
+          </div>
+        ),
+      };
+    });
+
+    return (
+      <div className="h-full flex flex-col">
+        {/* Page head */}
+        <div className="shrink-0 flex items-center gap-2 px-4 pt-4 pb-2">
+          <div className="flex-1">
+            <div style={{ fontSize: 'var(--t-h3)', fontWeight: 600, letterSpacing: '-.01em' }}>
+              Notes
+              <span style={{ fontSize: 'var(--t-sm)', color: 'var(--text3)', fontWeight: 400, marginLeft: 6 }}>
+                {unresolvedCount} unresolved · {totalCount} total
+              </span>
+            </div>
+          </div>
+          <button onClick={openNew} style={{ padding: '7px 12px', background: 'var(--primary)', color: '#fff', border: '1px solid var(--primary)', borderRadius: 'var(--r-sm)', fontSize: 'var(--t-sm)', fontWeight: 500 }}>＋ Note</button>
+        </div>
+
+        {/* Sticky filter chips: resolved + entity */}
+        <div className="shrink-0 flex items-center gap-2 px-4 pb-2 overflow-x-auto no-scrollbar" style={{ scrollbarWidth: 'none' }}>
+          <button
+            onClick={cycleResolved}
+            style={{
+              padding: '5px 11px',
+              borderRadius: 999,
+              background: resolvedFilter === 'unresolved' ? 'var(--primary-dim)' : 'var(--card)',
+              color: resolvedFilter === 'unresolved' ? 'var(--primary-2)' : 'var(--text3)',
+              border: `1px solid ${resolvedFilter === 'unresolved' ? 'var(--primary-2)' : 'var(--border)'}`,
+              fontSize: 12,
+              fontWeight: 600,
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+            }}
+          >
+            {resolvedLabel}
+          </button>
+          <button
+            onClick={() => setShowEntitySheet(true)}
+            style={{
+              padding: '5px 11px',
+              borderRadius: 999,
+              background: entityFilter === 'all' ? 'var(--card)' : 'var(--primary-dim)',
+              color: entityFilter === 'all' ? 'var(--text3)' : 'var(--primary-2)',
+              border: `1px solid ${entityFilter === 'all' ? 'var(--border)' : 'var(--primary-2)'}`,
+              fontSize: 12,
+              fontWeight: 600,
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+            }}
+          >
+            {entityDisplayName} ▾
+          </button>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search…"
+            style={{ flex: 1, minWidth: 120, padding: '5px 10px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 999, fontSize: 12, color: 'var(--text)', outline: 'none' }}
+          />
+        </div>
+
+        <SectionPager
+          sections={sections}
+          initialIndex={initialIndex}
+          onIndexChange={(i) => setTypeFilter(MOBILE_TYPE_SECTIONS[i].key)}
+        />
+
+        {/* Entity sheet */}
+        {showEntitySheet && (
+          <div
+            onClick={() => setShowEntitySheet(false)}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 60, display: 'flex', alignItems: 'flex-end' }}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: '100%',
+                maxHeight: '70vh',
+                background: 'var(--surface)',
+                borderTopLeftRadius: 16,
+                borderTopRightRadius: 16,
+                padding: '12px 0 calc(24px + var(--safe-b))',
+                overflowY: 'auto',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'center', paddingBottom: 8 }}>
+                <span style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--border-hi)' }} />
+              </div>
+              <div style={{ padding: '4px 16px 8px', fontSize: 'var(--t-tiny)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', fontWeight: 600 }}>
+                Filter by entity
+              </div>
+              <button
+                onClick={() => { setEntityFilter('all'); setShowEntitySheet(false); }}
+                style={{ display: 'flex', width: '100%', alignItems: 'center', padding: '10px 16px', background: entityFilter === 'all' ? 'var(--primary-dim)' : 'transparent', border: 'none', color: entityFilter === 'all' ? 'var(--primary-2)' : 'var(--text)', fontSize: 14, fontWeight: entityFilter === 'all' ? 600 : 400, textAlign: 'left', gap: 8 }}
+              >
+                <span style={{ flex: 1 }}>All entities</span>
+                <span style={{ fontSize: 11, fontVariantNumeric: 'tabular-nums', color: 'var(--text3)' }}>{unresolvedCount}</span>
+              </button>
+              {entities.map((e) => {
+                const active = entityFilter === e.key;
+                const count = unresolvedEntityCounts[e.key] ?? 0;
+                return (
+                  <button
+                    key={e.key}
+                    onClick={() => { setEntityFilter(e.key); setShowEntitySheet(false); }}
+                    style={{ display: 'flex', width: '100%', alignItems: 'center', padding: '10px 16px', background: active ? 'var(--primary-dim)' : 'transparent', border: 'none', color: active ? 'var(--primary-2)' : 'var(--text)', fontSize: 14, fontWeight: active ? 600 : 400, textAlign: 'left', gap: 8 }}
+                  >
+                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.label}</span>
+                    <span style={{ fontSize: 11, fontVariantNumeric: 'tabular-nums', color: count > 0 ? 'var(--text3)' : 'var(--text4)' }}>{count}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ─── Desktop layout ────────────────────────────────────────────────────
   return (
     <div style={{ padding: '24px 32px', display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Page head */}

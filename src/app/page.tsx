@@ -272,70 +272,131 @@ export default function HomePage() {
   const tokensDelta = pctDelta(today.tokens, yesterday.tokens);
   const costDelta = pctDelta(today.cost, yesterday.cost);
 
+  const pageHead = (
+    <div className="flex items-end justify-between gap-4 flex-wrap" style={{ marginBottom: isDesktop ? 24 : 12 }}>
+      <div>
+        <h1 className="font-semibold tracking-tight" style={{ fontSize: isDesktop ? 'var(--t-h1)' : 'var(--t-h2)' }}>
+          Home
+          <span className="ml-3 font-normal" style={{ color: 'var(--text3)', fontSize: 'var(--t-body)' }}>
+            {fmtDate()}
+          </span>
+        </h1>
+      </div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <button onClick={handleNewNote} className="transition-colors" style={{ padding: '8px 14px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', fontSize: 'var(--t-sm)', color: 'var(--text2)', fontWeight: 500 }}>＋ Note</button>
+        <button onClick={handleNewTask} className="transition-colors" style={{ padding: '8px 14px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', fontSize: 'var(--t-sm)', color: 'var(--text2)', fontWeight: 500 }}>＋ Task</button>
+        <button onClick={() => router.push('/handoffs')} className="transition-opacity hover:opacity-90" style={{ padding: '8px 14px', background: 'var(--primary)', border: '1px solid var(--primary)', borderRadius: 'var(--r-sm)', fontSize: 'var(--t-sm)', color: '#fff', fontWeight: 500 }}>＋ Handoff</button>
+      </div>
+    </div>
+  );
+
+  const sortedTasks = [...topTasks].sort((a, b) =>
+    ((b.created_at || b.updated_at) || '').localeCompare((a.created_at || a.updated_at) || '')
+  );
+  const featuredTask = sortedTasks[0] || null;
+  const restTasks = sortedTasks.slice(1, 8);
+
+  // ─── Mobile: swipe pager ────────────────────────────────────────────────
+  if (!isDesktop) {
+    const sections: Section[] = [
+      {
+        key: 'now',
+        label: 'Now',
+        content: (
+          <div className="flex flex-col gap-3 px-4 py-3" style={{ paddingBottom: 'calc(36px + var(--safe-b))' }}>
+            {mounted ? (
+              <CompactHandoffTile handoff={mounted} onUnmount={handleUnmount} onOpenDetail={() => router.push(`/handoff/${mounted.id}`)} />
+            ) : (
+              <CompactEmptyHandoffTile onBrowse={() => router.push('/handoffs')} />
+            )}
+            {(data.active_session?.length ?? 0) > 0 ? (
+              <CompactActiveSessionTile session={data.active_session[0]} />
+            ) : (
+              <CompactEmptyActiveSessionTile />
+            )}
+          </div>
+        ),
+      },
+      {
+        key: 'tasks',
+        label: 'Tasks',
+        badge: sortedTasks.length > 0 ? sortedTasks.length : null,
+        content: (
+          <div className="flex flex-col gap-3 px-4 py-3" style={{ paddingBottom: 'calc(36px + var(--safe-b))' }}>
+            {!featuredTask ? (
+              <div className="text-center" style={{ padding: '48px 24px', background: 'var(--card)', border: '1px dashed var(--border)', borderRadius: 'var(--r)', color: 'var(--text3)', fontSize: 'var(--t-sm)' }}>
+                No open tasks — <button onClick={() => router.push('/tasks')} style={{ color: 'var(--primary-2)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 'inherit', fontWeight: 500 }}>add one →</button>
+              </div>
+            ) : (
+              <>
+                <FeaturedTaskTile task={featuredTask} onOpen={() => setDetailTask(featuredTask)} />
+                <RecentTasksList tasks={restTasks} totalOpen={sortedTasks.length} onOpen={(t) => setDetailTask(t)} onSeeAll={() => router.push('/tasks')} />
+              </>
+            )}
+          </div>
+        ),
+      },
+      {
+        key: 'handoffs',
+        label: 'Handoffs',
+        badge: recent.length > 0 ? recent.length : null,
+        content: (
+          <div className="flex flex-col gap-2 px-4 py-3" style={{ paddingBottom: 'calc(36px + var(--safe-b))' }}>
+            <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
+              <span style={{ fontSize: 'var(--t-tiny)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', fontWeight: 600 }}>Last 7 days</span>
+              <Link href="/handoffs" style={{ fontSize: 'var(--t-sm)', color: 'var(--primary-2)' }}>View all →</Link>
+            </div>
+            {recent.length === 0 ? (
+              <div className="text-center" style={{ padding: '48px 24px', background: 'var(--card)', border: '1px dashed var(--border)', borderRadius: 'var(--r)', color: 'var(--text3)', fontSize: 'var(--t-sm)' }}>
+                No recent handoffs in the last 7 days.
+              </div>
+            ) : (
+              recent.map((h) => (
+                <HandoffRow key={h.id} handoff={h} onClick={() => setSelectedHandoff(h)} />
+              ))
+            )}
+          </div>
+        ),
+      },
+      {
+        key: 'pulse',
+        label: 'Pulse',
+        content: (
+          <div className="flex flex-col gap-2.5 px-4 py-3" style={{ paddingBottom: 'calc(36px + var(--safe-b))' }}>
+            <div style={{ fontSize: 'var(--t-tiny)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', fontWeight: 600, marginBottom: 4 }}>Today&apos;s Pulse</div>
+            <PulseStat k="Sessions" v={String(today.sessions)} sub={`${today.sessions} today · ${yesterday.sessions} yesterday`} delta={sessionsDelta} />
+            <PulseStat k="Tokens" v={fmtTokens(today.tokens)} sub={`${fmtK(today.input_tokens)} in · ${fmtK(today.output_tokens)} out`} delta={tokensDelta} />
+            <PulseStat k="Cost" v={`$${today.cost.toFixed(2)}`} sub={`of $${DAILY_COST_CAP.toFixed(0)} daily cap`} delta={costDelta} />
+          </div>
+        ),
+      },
+    ];
+
+    return (
+      <div className="h-full flex flex-col" style={{ overscrollBehaviorY: 'contain', overflowX: 'hidden' }}>
+        <div className="shrink-0 px-4 pt-4">{pageHead}</div>
+        <SectionPager sections={sections} initialIndex={0} />
+        {toast && (
+          <div style={{ position: 'fixed', bottom: 80, left: '50%', transform: 'translateX(-50%)', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r)', padding: '8px 16px', fontSize: 'var(--t-sm)', color: 'var(--text)', boxShadow: '0 4px 12px rgba(0,0,0,0.3)', zIndex: 1000, whiteSpace: 'nowrap' }}>
+            {toast}
+          </div>
+        )}
+        <HandoffPopup handoff={selectedHandoff} open={selectedHandoff !== null} onClose={() => setSelectedHandoff(null)} onUpdate={fetchHome} />
+        {detailTask && (
+          <TaskDetail task={detailTask as unknown as DetailTask} subtasks={[]} onClose={() => { setDetailTask(null); fetchTopTasks(); }} onUpdate={handleTaskUpdate} onDelete={handleTaskDelete} onAddSubtask={async (parentId, text) => handleAddSubtask(parentId, text)} />
+        )}
+      </div>
+    );
+  }
+
+  // ─── Desktop layout ────────────────────────────────────────────────────
   return (
     <div className="h-full overflow-y-auto" style={{ overscrollBehaviorY: 'contain', overflowX: 'hidden' }}>
       <div
         className="max-w-[1280px] mx-auto px-4 md:px-8 py-5 md:py-7"
-        style={{ paddingBottom: isDesktop ? 32 : 'calc(36px + var(--safe-b))' }}
+        style={{ paddingBottom: 32 }}
       >
-        {/* Page head */}
-        <div className="flex items-end justify-between mb-6 gap-4 flex-wrap">
-          <div>
-            <h1 className="font-semibold tracking-tight" style={{ fontSize: 'var(--t-h1)' }}>
-              Home
-              <span className="ml-3 font-normal" style={{ color: 'var(--text3)', fontSize: 'var(--t-body)' }}>
-                {fmtDate()}
-              </span>
-            </h1>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <button
-              onClick={handleNewNote}
-              className="transition-colors"
-              style={{
-                padding: '8px 14px',
-                background: 'var(--card)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--r-sm)',
-                fontSize: 'var(--t-sm)',
-                color: 'var(--text2)',
-                fontWeight: 500,
-              }}
-            >
-              ＋ Note
-            </button>
-            <button
-              onClick={handleNewTask}
-              className="transition-colors"
-              style={{
-                padding: '8px 14px',
-                background: 'var(--card)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--r-sm)',
-                fontSize: 'var(--t-sm)',
-                color: 'var(--text2)',
-                fontWeight: 500,
-              }}
-            >
-              ＋ Task
-            </button>
-            <button
-              onClick={() => router.push('/handoffs')}
-              className="transition-opacity hover:opacity-90"
-              style={{
-                padding: '8px 14px',
-                background: 'var(--primary)',
-                border: '1px solid var(--primary)',
-                borderRadius: 'var(--r-sm)',
-                fontSize: 'var(--t-sm)',
-                color: '#fff',
-                fontWeight: 500,
-              }}
-            >
-              ＋ Handoff
-            </button>
-          </div>
-        </div>
+        {pageHead}
 
         {/* ═══ HERO ROW — Current Handoff + Active Session (side by side) ═══ */}
         <TierLabel>HERO · CURRENT HANDOFF + ACTIVE SESSION</TierLabel>
