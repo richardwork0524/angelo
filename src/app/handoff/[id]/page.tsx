@@ -521,12 +521,32 @@ function parseSummarySections(notes: string): ParsedSection[] {
 }
 
 function deriveStatus(body: string): 'done' | 'in-progress' | 'todo' {
-  const checkboxes = [...body.matchAll(/^\s*[-*]?\s*\[([ xX])\]/gm)];
-  if (checkboxes.length === 0) return 'done';
-  const doneCount = checkboxes.filter((c) => c[1].toLowerCase() === 'x').length;
-  if (doneCount === checkboxes.length) return 'done';
-  if (doneCount > 0) return 'in-progress';
-  return 'todo';
+  // Tier 1: GFM checkboxes — most explicit signal.
+  const checkboxes = [...body.matchAll(/^\s*[-*\d.]+\s*\[([ xX])\]/gm)];
+  if (checkboxes.length > 0) {
+    const done = checkboxes.filter((c) => c[1].toLowerCase() === 'x').length;
+    if (done === checkboxes.length) return 'done';
+    if (done > 0) return 'in-progress';
+    return 'todo';
+  }
+
+  // Tier 2: emoji status markers (✅ / ❌ / ⏳ / 🚧 / ⚠️).
+  // Counted at line-start OR at the start of bold/list segments — these are bullet status, not prose.
+  const emojiHits = [...body.matchAll(/(?:^|^[-*\d.]+\s*|\*\*\s*)(✅|❌|⏳|🚧|⚠️)/gmu)];
+  // Tier 3: keyword markers — DONE / DEFERRED / BLOCKED / PENDING / IN PROGRESS / USER ACTION / TODO.
+  const doneKw = (body.match(/\b(DONE|COMPLETED|SHIPPED)\b/g) || []).length;
+  const pendingKw = (body.match(/\b(DEFERRED|BLOCKED|PENDING|TODO|USER ACTION|IN[-\s]PROGRESS|WIP)\b/g) || []).length;
+
+  const doneEmoji = emojiHits.filter((m) => m[1] === '✅').length;
+  const pendingEmoji = emojiHits.filter((m) => m[1] !== '✅').length;
+
+  const doneTotal = doneEmoji + doneKw;
+  const pendingTotal = pendingEmoji + pendingKw;
+
+  if (doneTotal === 0 && pendingTotal === 0) return 'todo'; // No signal → conservative default for handoff doc.
+  if (pendingTotal === 0) return 'done';
+  if (doneTotal === 0) return 'todo';
+  return 'in-progress';
 }
 
 function extractDate(body: string): string | null {
@@ -617,20 +637,8 @@ function SummaryTimeline({ sections }: { sections: ParsedSection[] }) {
               </div>
             </div>
             {expanded && s.body && (
-              <div
-                style={{
-                  marginTop: 8,
-                  padding: '10px 12px',
-                  background: 'var(--bg)',
-                  borderRadius: 'var(--r-sm)',
-                  border: '1px solid var(--border)',
-                  fontSize: 'var(--t-sm)',
-                  color: 'var(--text2)',
-                  whiteSpace: 'pre-wrap',
-                  lineHeight: 1.6,
-                }}
-              >
-                {s.body}
+              <div style={{ marginTop: 8 }}>
+                <RichBody body={s.body} />
               </div>
             )}
           </div>
@@ -661,6 +669,420 @@ function TimelineStatusPill({ status }: { status: 'done' | 'in-progress' | 'todo
     >
       {config.label}
     </span>
+  );
+}
+
+// ============================================================
+// RichBody — structured renderer for handoff timeline expansion
+// Splits on bold-prefixed sub-blocks (**Build —**, **Test —**),
+// renders bullets/numbered lists, surfaces ✅/⏳/❌ as status dots,
+// pills out status keywords (DONE, DEFERRED, BLOCKER, USER ACTION),
+// styles `code` and **bold** inline, and turns URLs into links.
+// ============================================================
+
+interface SubBlock {
+  heading: string | null;
+  status: 'done' | 'in-progress' | 'todo' | null;
+  bodyLines: string[];
+}
+
+function splitSubBlocks(body: string): SubBlock[] {
+  const lines = body.split('\n');
+  const blocks: SubBlock[] = [];
+  let current: SubBlock = { heading: null, bodyLines: [], status: null };
+
+  for (const line of lines) {
+    // Match either "### Heading" / "**Heading**" / "**Build — ✅ DONE 2026-04-25**"
+    const md = line.match(/^#{3,4}\s+(.+?)\s*$/);
+    const bold = line.match(/^\*\*([^*]+?)\*\*\s*$/);
+    const m = md || bold;
+    if (m) {
+      if (current.heading || current.bodyLines.length > 0) blocks.push(current);
+      const raw = m[1].trim();
+      // Strip emoji + status keywords from heading; the status pill carries that info.
+      const cleanHeading = raw
+        .replace(/(✅|❌|⏳|🚧|⚠️)\s*/g, '')
+        .replace(/\b(DONE|COMPLETED|SHIPPED|DEFERRED|BLOCKED|BLOCKER|PENDING|TODO|USER ACTION|IN[-\s]PROGRESS|WIP)(?:\s+(?:to\s+)?20\d\d-\d\d-\d\d)?\b\s*/gi, '')
+        .replace(/\s{2,}/g, ' ')
+        .replace(/\s*[—-]\s*$/, '')
+        .trim();
+      current = { heading: cleanHeading, bodyLines: [], status: null };
+      // Stash heading raw on the block so we can fold its status signal into the block status later.
+      current.bodyLines.push(`__HEADING_STATUS__:${raw}`);
+    } else {
+      current.bodyLines.push(line);
+    }
+  }
+  if (current.heading || current.bodyLines.length > 0) blocks.push(current);
+
+  // Resolve each block's status from heading + body combined.
+  for (const b of blocks) {
+    const headingStatusLine = b.bodyLines.find((l) => l.startsWith('__HEADING_STATUS__:'));
+    const headingRaw = headingStatusLine ? headingStatusLine.replace('__HEADING_STATUS__:', '') : '';
+    b.bodyLines = b.bodyLines.filter((l) => !l.startsWith('__HEADING_STATUS__:'));
+    b.status = deriveStatus(`${headingRaw}\n${b.bodyLines.join('\n')}`);
+  }
+  return blocks;
+}
+
+interface ParsedLine {
+  kind: 'bullet' | 'number' | 'prose' | 'code-fence' | 'blank';
+  text: string;
+  number?: string;
+  marker?: '✅' | '❌' | '⏳' | '🚧' | '⚠️' | null;
+  fenceLang?: string;
+}
+
+function parseLines(bodyLines: string[]): ParsedLine[] {
+  const out: ParsedLine[] = [];
+  let inFence = false;
+  let fenceBuf: string[] = [];
+  let fenceLang = '';
+
+  for (const raw of bodyLines) {
+    const fence = raw.match(/^\s*```(\w*)\s*$/);
+    if (fence) {
+      if (inFence) {
+        out.push({ kind: 'code-fence', text: fenceBuf.join('\n'), fenceLang });
+        fenceBuf = [];
+        fenceLang = '';
+        inFence = false;
+      } else {
+        inFence = true;
+        fenceLang = fence[1] || '';
+      }
+      continue;
+    }
+    if (inFence) {
+      fenceBuf.push(raw);
+      continue;
+    }
+
+    if (!raw.trim()) {
+      out.push({ kind: 'blank', text: '' });
+      continue;
+    }
+
+    const numMatch = raw.match(/^\s*(\d+)\.\s+(.*)$/);
+    const bulMatch = raw.match(/^\s*[-*]\s+(.*)$/);
+    if (numMatch) {
+      const { marker, rest } = extractMarker(numMatch[2]);
+      out.push({ kind: 'number', number: numMatch[1], text: rest, marker });
+    } else if (bulMatch) {
+      const { marker, rest } = extractMarker(bulMatch[1]);
+      out.push({ kind: 'bullet', text: rest, marker });
+    } else {
+      out.push({ kind: 'prose', text: raw, marker: null });
+    }
+  }
+  if (inFence && fenceBuf.length > 0) {
+    out.push({ kind: 'code-fence', text: fenceBuf.join('\n'), fenceLang });
+  }
+  return out;
+}
+
+function extractMarker(text: string): { marker: ParsedLine['marker']; rest: string } {
+  const m = text.match(/^(✅|❌|⏳|🚧|⚠️)\s*(.*)$/u);
+  if (m) return { marker: m[1] as ParsedLine['marker'], rest: m[2] };
+  return { marker: null, rest: text };
+}
+
+const KEYWORD_PILLS: Array<{ re: RegExp; label: string; tone: 'done' | 'pending' | 'block' | 'info' }> = [
+  { re: /\bDONE(?:\s+20\d\d-\d\d-\d\d)?\b/, label: 'DONE', tone: 'done' },
+  { re: /\bCOMPLETED\b/, label: 'DONE', tone: 'done' },
+  { re: /\bSHIPPED\b/, label: 'SHIPPED', tone: 'done' },
+  { re: /\bDEFERRED(?:\s+to\s+20\d\d-\d\d-\d\d)?\b/, label: 'DEFERRED', tone: 'pending' },
+  { re: /\bBLOCKED\b|\bBLOCKER\b/, label: 'BLOCKED', tone: 'block' },
+  { re: /\bUSER ACTION\b/, label: 'USER ACTION', tone: 'pending' },
+  { re: /\bPENDING\b/, label: 'PENDING', tone: 'pending' },
+  { re: /\bIN[-\s]PROGRESS\b|\bWIP\b/, label: 'IN PROGRESS', tone: 'pending' },
+  { re: /\bTODO\b/, label: 'TODO', tone: 'pending' },
+];
+
+function pillStyles(tone: 'done' | 'pending' | 'block' | 'info'): { bg: string; fg: string } {
+  if (tone === 'done') return { bg: 'var(--success-dim)', fg: 'var(--success)' };
+  if (tone === 'pending') return { bg: 'var(--primary-dim)', fg: 'var(--primary-2)' };
+  if (tone === 'block') return { bg: 'var(--warn-dim)', fg: 'var(--warn)' };
+  return { bg: 'var(--card-alt)', fg: 'var(--text2)' };
+}
+
+function StatusKeywordPill({ label, tone }: { label: string; tone: 'done' | 'pending' | 'block' | 'info' }) {
+  const c = pillStyles(tone);
+  return (
+    <span
+      style={{
+        display: 'inline-block',
+        fontSize: 9,
+        fontWeight: 700,
+        textTransform: 'uppercase',
+        letterSpacing: '.06em',
+        padding: '1px 6px',
+        borderRadius: 3,
+        background: c.bg,
+        color: c.fg,
+        verticalAlign: 'middle',
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
+function MarkerDot({ marker }: { marker: NonNullable<ParsedLine['marker']> }) {
+  const config: Record<string, { bg: string; fg: string; symbol: string }> = {
+    '✅': { bg: 'var(--success)',  fg: '#fff', symbol: '✓' },
+    '❌': { bg: 'var(--warn)',     fg: '#fff', symbol: '×' },
+    '⏳': { bg: 'var(--primary)',  fg: '#fff', symbol: '⏳' },
+    '🚧': { bg: 'var(--warn-dim)', fg: 'var(--warn)', symbol: '!' },
+    '⚠️': { bg: 'var(--warn-dim)', fg: 'var(--warn)', symbol: '!' },
+  };
+  const c = config[marker] || config['⏳'];
+  return (
+    <span
+      style={{
+        width: 16,
+        height: 16,
+        borderRadius: '50%',
+        background: c.bg,
+        color: c.fg,
+        fontSize: 10,
+        fontWeight: 700,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+        lineHeight: 1,
+      }}
+    >
+      {c.symbol}
+    </span>
+  );
+}
+
+function renderInline(text: string, keyPrefix: string): React.ReactNode {
+  // Strip leading status keywords — we'll prepend them as pills.
+  const pills: Array<{ label: string; tone: 'done' | 'pending' | 'block' | 'info' }> = [];
+  let working = text;
+
+  // Pull bold-wrapped status keywords (e.g. "**DONE 2026-04-25**") to pills.
+  working = working.replace(/\*\*([^*]+)\*\*/g, (_full, inner) => {
+    const trimmed = inner.trim();
+    for (const k of KEYWORD_PILLS) {
+      if (k.re.test(trimmed) && trimmed.length < 40) {
+        pills.push({ label: trimmed.toUpperCase(), tone: k.tone });
+        return '';
+      }
+    }
+    return `${inner}`; // placeholder for bold-not-pill
+  });
+
+  working = working.replace(/^\s*[—-]\s*/, '').trim();
+
+  // Tokenize: code spans `…`, bold placeholders, links, raw URLs, plain text.
+  const parts: React.ReactNode[] = [];
+  const tokenRe = /(`[^`]+`)|(\[[^\]]+\]\([^)]+\))|(https?:\/\/[^\s)]+)/g;
+  let lastIdx = 0;
+  let m: RegExpExecArray | null;
+  let i = 0;
+  while ((m = tokenRe.exec(working)) !== null) {
+    if (m.index > lastIdx) parts.push(working.slice(lastIdx, m.index));
+    const tok = m[0];
+    if (tok.startsWith('`')) {
+      parts.push(
+        <code
+          key={`${keyPrefix}-c-${i++}`}
+          style={{
+            fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+            fontSize: '0.92em',
+            padding: '1px 5px',
+            background: 'var(--card-alt)',
+            border: '1px solid var(--border)',
+            borderRadius: 3,
+            color: 'var(--text)',
+          }}
+        >
+          {tok.slice(1, -1)}
+        </code>,
+      );
+    } else if (tok.startsWith('[')) {
+      const lm = tok.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+      if (lm) {
+        parts.push(
+          <a
+            key={`${keyPrefix}-l-${i++}`}
+            href={lm[2]}
+            target="_blank"
+            rel="noreferrer noopener"
+            style={{ color: 'var(--primary-2)', textDecoration: 'underline' }}
+          >
+            {lm[1]}
+          </a>,
+        );
+      }
+    } else {
+      // Bare URL.
+      parts.push(
+        <a
+          key={`${keyPrefix}-u-${i++}`}
+          href={tok}
+          target="_blank"
+          rel="noreferrer noopener"
+          style={{ color: 'var(--primary-2)', textDecoration: 'underline', wordBreak: 'break-all' }}
+        >
+          {tok.replace(/^https?:\/\//, '')}
+        </a>,
+      );
+    }
+    lastIdx = m.index + tok.length;
+  }
+  if (lastIdx < working.length) parts.push(working.slice(lastIdx));
+
+  return (
+    <>
+      {pills.map((p, idx) => (
+        <span key={`${keyPrefix}-p-${idx}`} style={{ marginRight: 6 }}>
+          <StatusKeywordPill label={p.label} tone={p.tone} />
+        </span>
+      ))}
+      {parts}
+    </>
+  );
+}
+
+function RichBody({ body }: { body: string }) {
+  const blocks = splitSubBlocks(body);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {blocks.map((b, bi) => (
+        <SubBlockCard key={bi} block={b} keyPrefix={`b${bi}`} />
+      ))}
+    </div>
+  );
+}
+
+function SubBlockCard({ block, keyPrefix }: { block: SubBlock; keyPrefix: string }) {
+  const lines = parseLines(block.bodyLines);
+  // Skip leading/trailing blank lines.
+  while (lines.length && lines[0].kind === 'blank') lines.shift();
+  while (lines.length && lines[lines.length - 1].kind === 'blank') lines.pop();
+  if (!block.heading && lines.length === 0) return null;
+
+  const accent =
+    block.status === 'done' ? 'var(--success)' :
+    block.status === 'in-progress' ? 'var(--primary-2)' :
+    block.status === 'todo' ? 'var(--text4)' :
+    'var(--border)';
+
+  return (
+    <div
+      style={{
+        background: 'var(--bg)',
+        border: '1px solid var(--border)',
+        borderLeft: `3px solid ${accent}`,
+        borderRadius: 'var(--r-sm)',
+        padding: '10px 12px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+      }}
+    >
+      {block.heading && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 'var(--t-sm)', fontWeight: 600, color: 'var(--text)' }}>
+            {block.heading}
+          </span>
+          {block.status && <TimelineStatusPill status={block.status} />}
+        </div>
+      )}
+      {lines.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {lines.map((ln, li) => (
+            <RenderedLine key={li} line={ln} keyPrefix={`${keyPrefix}-${li}`} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RenderedLine({ line, keyPrefix }: { line: ParsedLine; keyPrefix: string }) {
+  if (line.kind === 'blank') return <div style={{ height: 4 }} />;
+
+  if (line.kind === 'code-fence') {
+    return (
+      <pre
+        style={{
+          margin: '4px 0',
+          padding: '8px 10px',
+          background: 'var(--card-alt)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--r-sm)',
+          fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+          fontSize: 11,
+          color: 'var(--text)',
+          overflowX: 'auto',
+          lineHeight: 1.5,
+        }}
+      >
+        {line.text}
+      </pre>
+    );
+  }
+
+  if (line.kind === 'prose') {
+    return (
+      <div
+        style={{
+          fontSize: 'var(--t-sm)',
+          color: 'var(--text2)',
+          lineHeight: 1.6,
+        }}
+      >
+        {renderInline(line.text, keyPrefix)}
+      </div>
+    );
+  }
+
+  // Bullet/number rows: marker dot replaces the bullet glyph when present (no double indent).
+  // Numbered rows always show the number, even when marked, so list ordering stays readable.
+  const showGlyph = line.kind === 'number' || !line.marker;
+  const glyph = line.kind === 'number' ? `${line.number}.` : '•';
+
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: showGlyph && line.marker ? 'auto auto 1fr'
+          : showGlyph ? 'auto 1fr'
+          : line.marker ? 'auto 1fr'
+          : '1fr',
+        gap: 8,
+        alignItems: 'baseline',
+        fontSize: 'var(--t-sm)',
+        color: 'var(--text2)',
+        lineHeight: 1.6,
+      }}
+    >
+      {showGlyph && (
+        <span
+          style={{
+            color: 'var(--text4)',
+            fontVariantNumeric: 'tabular-nums',
+            fontFamily: line.kind === 'number' ? 'ui-monospace, SFMono-Regular, monospace' : 'inherit',
+            fontSize: line.kind === 'number' ? 11 : 'var(--t-sm)',
+            minWidth: line.kind === 'number' ? 18 : 12,
+          }}
+        >
+          {glyph}
+        </span>
+      )}
+      {line.marker && (
+        <span style={{ alignSelf: 'center' }}>
+          <MarkerDot marker={line.marker} />
+        </span>
+      )}
+      <span>{renderInline(line.text, keyPrefix)}</span>
+    </div>
   );
 }
 
